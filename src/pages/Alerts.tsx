@@ -16,6 +16,7 @@ import {
   CalendarX,
   User,
   CalendarDays,
+  Plus,
 } from "lucide-react";
 import { useSleepCoachStore } from "../store";
 import PageHeader from "../components/PageHeader";
@@ -32,12 +33,15 @@ const alertTypeConfig: Record<string, { icon: typeof Bell; color: string; label:
 export default function AlertsPage() {
   const alerts = useSleepCoachStore((s) => s.alerts);
   const clients = useSleepCoachStore((s) => s.clients);
+  const appointments = useSleepCoachStore((s) => s.appointments);
   const resolveAlert = useSleepCoachStore((s) => s.resolveAlert);
   const boundarySettings = useSleepCoachStore((s) => s.boundarySettings);
   const saveBoundarySettings = useSleepCoachStore((s) => s.saveBoundarySettings);
   const getUpcomingFollowUps = useSleepCoachStore((s) => s.getUpcomingFollowUps);
   const getOverdueFollowUps = useSleepCoachStore((s) => s.getOverdueFollowUps);
   const toggleAppointmentCompleted = useSleepCoachStore((s) => s.toggleAppointmentCompleted);
+  const updateAppointment = useSleepCoachStore((s) => s.updateAppointment);
+  const createAppointment = useSleepCoachStore((s) => s.createAppointment);
   const openSidebar = useSleepCoachStore((s) => s.openSidebar);
   const getClientAppointments = useSleepCoachStore((s) => s.getClientAppointments);
 
@@ -46,6 +50,14 @@ export default function AlertsPage() {
   const [form, setForm] = useState<BoundarySettings>(boundarySettings);
   const [saved, setSaved] = useState(false);
   const [activeTab, setActiveTab] = useState<"alerts" | "followup">("alerts");
+  const [rescheduleAppt, setRescheduleAppt] = useState<Appointment | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState("");
+  const [rescheduleTime, setRescheduleTime] = useState("");
+  const [showAddFollowUp, setShowAddFollowUp] = useState(false);
+  const [addFollowUpClientId, setAddFollowUpClientId] = useState("");
+  const [addFollowUpDate, setAddFollowUpDate] = useState("");
+  const [addFollowUpTime, setAddFollowUpTime] = useState("10:00");
+  const [addFollowUpNotes, setAddFollowUpNotes] = useState("");
 
   const filteredAlerts = useMemo(() => {
     let list = [...alerts].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -68,12 +80,22 @@ export default function AlertsPage() {
   const upcomingFollowUps = useMemo(() => getUpcomingFollowUps(7), [getUpcomingFollowUps]);
   const overdueFollowUps = useMemo(() => getOverdueFollowUps(), [getOverdueFollowUps]);
 
+  const completedFollowUps = useMemo(() => {
+    const today = new Date().toISOString().split("T")[0];
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+    return appointments
+      .filter((a) => a.completed && (a.type === "周复盘" || a.type === "阶段总结") && a.date >= sevenDaysAgo && a.date <= today)
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, 10);
+  }, [appointments]);
+
   const followUpStats = useMemo(() => {
     return {
       upcoming: upcomingFollowUps.length,
       overdue: overdueFollowUps.length,
+      completed: completedFollowUps.length,
     };
-  }, [upcomingFollowUps, overdueFollowUps]);
+  }, [upcomingFollowUps, overdueFollowUps, completedFollowUps]);
 
   const getDaysDiff = (dateStr: string) => {
     const today = new Date();
@@ -454,13 +476,28 @@ export default function AlertsPage() {
 
       {activeTab === "followup" && (
         <div className="space-y-6">
+          <div className="flex justify-end">
+            <button
+              className="btn-primary flex items-center gap-2"
+              onClick={() => {
+                setAddFollowUpDate(new Date().toISOString().split("T")[0]);
+                setAddFollowUpClientId("");
+                setAddFollowUpNotes("");
+                setShowAddFollowUp(true);
+              }}
+            >
+              <Plus className="w-4 h-4" />
+              补录复盘
+            </button>
+          </div>
+
           {overdueFollowUps.length > 0 && (
             <div className="card overflow-hidden">
               <div className="p-4 border-b border-slate-100 bg-warning-500/5">
                 <div className="flex items-center gap-2">
                   <CalendarX className="w-5 h-5 text-warning-600" />
                   <h3 className="font-serif text-base font-semibold text-warning-700">
-                    已逾期复盘（{overdueFollowUps.length}）
+                    已逾期（{overdueFollowUps.length}）
                   </h3>
                 </div>
               </div>
@@ -480,6 +517,11 @@ export default function AlertsPage() {
                       lastCompleted={lastCompleted}
                       onComplete={() => toggleAppointmentCompleted(appt.id)}
                       onOpenSidebar={() => openSidebar(client.id)}
+                      onReschedule={() => {
+                        setRescheduleAppt(appt);
+                        setRescheduleDate(appt.date);
+                        setRescheduleTime(appt.time);
+                      }}
                     />
                   );
                 })}
@@ -513,17 +555,150 @@ export default function AlertsPage() {
                       lastCompleted={lastCompleted}
                       onComplete={() => toggleAppointmentCompleted(appt.id)}
                       onOpenSidebar={() => openSidebar(client.id)}
+                      onReschedule={() => {
+                        setRescheduleAppt(appt);
+                        setRescheduleDate(appt.date);
+                        setRescheduleTime(appt.time);
+                      }}
                     />
                   );
                 })
               ) : (
-                <div className="text-center py-16 text-slate-400">
+                <div className="text-center py-12 text-slate-400">
                   <CalendarDays className="w-12 h-12 mx-auto mb-3 opacity-50" />
                   <p className="text-sm">近7天暂无待复盘预约</p>
                 </div>
               )}
             </div>
           </div>
+
+          {completedFollowUps.length > 0 && (
+            <div className="card overflow-hidden">
+              <div className="p-4 border-b border-slate-100 bg-mint-50">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="w-5 h-5 text-mint-600" />
+                  <h3 className="font-serif text-base font-semibold text-mint-700">
+                    近7天已完成（{completedFollowUps.length}）
+                  </h3>
+                </div>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {completedFollowUps.map((appt) => {
+                  const client = getClient(appt.clientId);
+                  if (!client) return null;
+                  return (
+                    <div key={appt.id} className="flex items-center gap-4 p-4 bg-slate-50/50 opacity-75">
+                      <div className={cn(
+                        "w-10 h-10 rounded-lg flex items-center justify-center text-white text-sm font-medium",
+                        client.gender === "女" ? "bg-rose-400" : "bg-primary-500"
+                      )}>
+                        {client.name.slice(0, 1)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-slate-700">{client.name}</span>
+                          <span className="text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                            W{client.currentWeek}/{client.programType}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5">{appt.date} {appt.time} · {appt.type}</p>
+                      </div>
+                      <span className="text-xs text-mint-600 flex items-center gap-1">
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        已完成
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {rescheduleAppt && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm animate-fade-in" onClick={() => setRescheduleAppt(null)} />
+              <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md animate-slide-up">
+                <div className="p-5 border-b border-slate-100">
+                  <h3 className="font-serif text-lg font-semibold text-slate-800">改期复盘</h3>
+                  <p className="text-sm text-slate-500 mt-1">
+                    {getClient(rescheduleAppt.clientId)?.name} · 原定 {rescheduleAppt.date} {rescheduleAppt.time}
+                  </p>
+                </div>
+                <div className="p-5 space-y-4">
+                  <div>
+                    <label className="text-sm text-slate-600 mb-1 block">新日期</label>
+                    <input type="date" className="input-field" value={rescheduleDate} onChange={(e) => setRescheduleDate(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="text-sm text-slate-600 mb-1 block">新时间</label>
+                    <input type="time" className="input-field" value={rescheduleTime} onChange={(e) => setRescheduleTime(e.target.value)} />
+                  </div>
+                </div>
+                <div className="p-5 border-t border-slate-100 flex gap-3 justify-end">
+                  <button className="btn-secondary" onClick={() => setRescheduleAppt(null)}>取消</button>
+                  <button className="btn-primary" onClick={() => {
+                    updateAppointment(rescheduleAppt.id, { date: rescheduleDate, time: rescheduleTime });
+                    setRescheduleAppt(null);
+                  }}>确认改期</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {showAddFollowUp && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm animate-fade-in" onClick={() => setShowAddFollowUp(false)} />
+              <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md animate-slide-up">
+                <div className="p-5 border-b border-slate-100">
+                  <h3 className="font-serif text-lg font-semibold text-slate-800">补录复盘预约</h3>
+                </div>
+                <div className="p-5 space-y-4">
+                  <div>
+                    <label className="text-sm text-slate-600 mb-1 block">来访者</label>
+                    <select className="input-field" value={addFollowUpClientId} onChange={(e) => setAddFollowUpClientId(e.target.value)}>
+                      <option value="">选择来访者...</option>
+                      {clients.filter((c) => c.status !== "已结案").map((c) => (
+                        <option key={c.id} value={c.id}>{c.name} (W{c.currentWeek}/{c.programType})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-sm text-slate-600 mb-1 block">日期</label>
+                      <input type="date" className="input-field" value={addFollowUpDate} onChange={(e) => setAddFollowUpDate(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="text-sm text-slate-600 mb-1 block">时间</label>
+                      <input type="time" className="input-field" value={addFollowUpTime} onChange={(e) => setAddFollowUpTime(e.target.value)} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-sm text-slate-600 mb-1 block">备注</label>
+                    <textarea className="input-field h-20 resize-none" placeholder="可选备注..." value={addFollowUpNotes} onChange={(e) => setAddFollowUpNotes(e.target.value)} />
+                  </div>
+                </div>
+                <div className="p-5 border-t border-slate-100 flex gap-3 justify-end">
+                  <button className="btn-secondary" onClick={() => setShowAddFollowUp(false)}>取消</button>
+                  <button
+                    className={cn("btn-primary", !addFollowUpClientId && "opacity-50 cursor-not-allowed")}
+                    disabled={!addFollowUpClientId}
+                    onClick={() => {
+                      if (!addFollowUpClientId) return;
+                      createAppointment({
+                        clientId: addFollowUpClientId,
+                        date: addFollowUpDate,
+                        time: addFollowUpTime,
+                        type: "周复盘",
+                        notes: addFollowUpNotes || undefined,
+                        source: "manual",
+                      });
+                      setShowAddFollowUp(false);
+                    }}
+                  >保存预约</button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -537,6 +712,7 @@ function FollowUpRow({
   lastCompleted,
   onComplete,
   onOpenSidebar,
+  onReschedule,
 }: {
   appointment: Appointment;
   client: Client;
@@ -544,6 +720,7 @@ function FollowUpRow({
   lastCompleted?: Appointment;
   onComplete: () => void;
   onOpenSidebar: () => void;
+  onReschedule: () => void;
 }) {
   const isOverdue = daysDiff < 0;
   const isToday = daysDiff === 0;
@@ -612,13 +789,22 @@ function FollowUpRow({
           </p>
         )}
       </div>
-      <button
-        onClick={onComplete}
-        className="btn-primary flex items-center gap-1.5 text-sm"
-      >
-        <CheckCircle className="w-4 h-4" />
-        标记完成
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onReschedule}
+          className="btn-secondary flex items-center gap-1.5 text-sm"
+        >
+          <CalendarDays className="w-4 h-4" />
+          改期
+        </button>
+        <button
+          onClick={onComplete}
+          className="btn-primary flex items-center gap-1.5 text-sm"
+        >
+          <CheckCircle className="w-4 h-4" />
+          完成
+        </button>
+      </div>
     </div>
   );
 }

@@ -72,7 +72,8 @@ interface SleepCoachStore {
   updateClient: (clientId: string, updates: Partial<Client>) => void;
   saveStageSummary: (summary: StageSummary) => void;
   saveDeliveryPackage: (pkg: DeliveryPackage) => void;
-  generateDeliveryPackage: (clientId: string, reviewId?: string) => DeliveryPackage;
+  generateDeliveryPackage: (clientId: string, reviewId?: string, note?: string, coachName?: string) => DeliveryPackage;
+  updateDeliveryPackageNote: (pkgId: string, note: string) => void;
 
   createClient: (data: {
     name: string;
@@ -295,7 +296,7 @@ export const useSleepCoachStore = create<SleepCoachStore>((set, get) => ({
     saveToStorage("sct_delivery_packages", newList);
   },
 
-  generateDeliveryPackage: (clientId, reviewId) => {
+  generateDeliveryPackage: (clientId, reviewId, note, coachName) => {
     const client = get().clients.find((c) => c.id === clientId);
     if (!client) {
       throw new Error("来访者不存在");
@@ -312,13 +313,18 @@ export const useSleepCoachStore = create<SleepCoachStore>((set, get) => ({
 
     const stageSummary = get().generateStageSummary(clientId);
 
-    const today = new Date().toISOString().split("T")[0];
+    const now = new Date();
+    const today = now.toISOString().split("T")[0];
+    const timeStr = now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
     const weekNumber = review?.weekNumber || client.currentWeek;
 
     let fullText = "";
     fullText += "═══════════════════════════════════════════\n";
     fullText += `     ${client.name} · 来访者交付包\n`;
-    fullText += `     第 ${weekNumber} 周 · 生成日期：${today}\n`;
+    fullText += `     第 ${weekNumber} 周 · 生成日期：${today} ${timeStr}\n`;
+    if (coachName) {
+      fullText += `     教练署名：${coachName}\n`;
+    }
     fullText += "═══════════════════════════════════════════\n\n";
 
     fullText += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
@@ -350,7 +356,18 @@ export const useSleepCoachStore = create<SleepCoachStore>((set, get) => ({
     fullText += stageSummary.fullText || stageSummary.content;
     fullText += "\n";
 
+    if (note) {
+      fullText += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+      fullText += "四、备注\n";
+      fullText += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+      fullText += `  ${note}\n\n`;
+    }
+
     fullText += "═══════════════════════════════════════════\n";
+    if (coachName) {
+      fullText += `  教练：${coachName}\n`;
+    }
+    fullText += `  生成时间：${today} ${timeStr}\n`;
     fullText += "  本交付包由睡眠教练工作台自动生成\n";
     fullText += "═══════════════════════════════════════════\n";
 
@@ -366,10 +383,20 @@ export const useSleepCoachStore = create<SleepCoachStore>((set, get) => ({
       nextWindowBed: nextBed,
       nextWindowWake: nextWake,
       fullText,
+      note,
+      coachName,
     };
 
     get().saveDeliveryPackage(pkg);
     return pkg;
+  },
+
+  updateDeliveryPackageNote: (pkgId, note) => {
+    const newList = get().deliveryPackages.map((p) =>
+      p.id === pkgId ? { ...p, note } : p
+    );
+    set({ deliveryPackages: newList });
+    saveToStorage("sct_delivery_packages", newList);
   },
 
   createClient: (data) => {
@@ -542,7 +569,14 @@ export const useSleepCoachStore = create<SleepCoachStore>((set, get) => ({
     const newList = get().materialSendRecords.map((r) => {
       if (r.id !== recordId) return r;
       const updated: MaterialSendRecord = { ...r, status };
-      if (status === "sent") updated.sentAt = today;
+      if (status === "pending") {
+        updated.sentAt = undefined;
+        updated.appliedAt = undefined;
+      }
+      if (status === "sent") {
+        updated.sentAt = today;
+        updated.appliedAt = undefined;
+      }
       if (status === "applied") {
         updated.sentAt = r.sentAt || today;
         updated.appliedAt = today;
@@ -559,21 +593,21 @@ export const useSleepCoachStore = create<SleepCoachStore>((set, get) => ({
     const weekPlan = get().getCurrentWeekPlan(clientId);
     if (!weekPlan?.materials?.length) return;
 
-    const existing = get().getClientMaterialSendRecords(clientId);
-    const existingForWeek = existing.filter(
-      (r) => r.weekNumber === weekPlan.weekNumber
+    const existing = get().materialSendRecords.filter(
+      (r) => r.clientId === clientId && r.weekNumber === client.currentWeek
     );
 
     weekPlan.materials.forEach((materialName) => {
-      const alreadyExists = existingForWeek.some(
+      const alreadyExists = existing.some(
         (r) => r.materialName === materialName
       );
       if (!alreadyExists) {
         get().addMaterialSendRecord({
           clientId,
           materialName,
-          weekNumber: weekPlan.weekNumber,
+          weekNumber: client.currentWeek,
           status: "pending",
+          taskName: weekPlan.focus,
         });
       }
     });

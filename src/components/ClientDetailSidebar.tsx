@@ -79,7 +79,10 @@ export default function ClientDetailSidebar() {
     .slice(0, 8);
   const flowHistory = getClientFlowHistory(client.id);
   const summaries = getClientStageSummaries(client.id);
-  const materialRecords = getClientMaterialSendRecords(client.id);
+  const allMaterialRecords = getClientMaterialSendRecords(client.id);
+  const materialRecords = allMaterialRecords.filter(
+    (r) => r.weekNumber === client.currentWeek
+  );
 
   const toggle = (key: string) =>
     setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -369,7 +372,7 @@ export default function ClientDetailSidebar() {
 
           <SidebarSection
             icon={<File className="w-4 h-4" />}
-            title="本周素材状态"
+            title={`第${client.currentWeek}周素材状态`}
             expanded={expanded.materials}
             onToggle={() => toggle("materials")}
             headerRight={

@@ -182,6 +182,8 @@ export interface DeliveryPackage {
   nextWindowBed?: string;
   nextWindowWake?: string;
   fullText: string;
+  note?: string;
+  coachName?: string;
 }
 
 export type MaterialSendStatus = "pending" | "sent" | "applied";
@@ -196,4 +198,5 @@ export interface MaterialSendRecord {
   sentAt?: string;
   appliedAt?: string;
   note?: string;
+  taskName?: string;
 }

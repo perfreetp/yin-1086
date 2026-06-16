@@ -76,6 +76,9 @@ export default function ReviewPage() {
   const [viewingSummary, setViewingSummary] = useState<StageSummaryType | null>(null);
   const [viewingPackage, setViewingPackage] = useState<DeliveryPackage | null>(null);
   const [reviewSaved, setReviewSaved] = useState(false);
+  const [deliveryNote, setDeliveryNote] = useState("");
+  const [coachName, setCoachName] = useState("");
+  const [showDeliveryForm, setShowDeliveryForm] = useState(false);
 
   const selectedClient = clients.find((c) => c.id === selectedClientId);
   const clientReviews = selectedClient
@@ -725,8 +728,7 @@ ${latestReview.summary}
                       className="btn-primary flex items-center gap-2"
                       onClick={() => {
                         if (!selectedClient) return;
-                        const pkg = generateDeliveryPackage(selectedClient.id, latestReview?.id);
-                        setViewingPackage(pkg);
+                        setShowDeliveryForm(true);
                       }}
                     >
                       <Download className="w-4 h-4" />
@@ -737,6 +739,51 @@ ${latestReview.summary}
                 <p className="text-sm text-slate-500 mb-4">
                   一键合成周任务单、睡眠窗口建议、阶段总结为完整交付材料，可复制或下载。
                 </p>
+
+                {showDeliveryForm && (
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 mb-4 space-y-3">
+                    <div>
+                      <label className="text-xs text-slate-600 mb-1 block">教练署名（可选）</label>
+                      <input
+                        type="text"
+                        className="input-field text-sm"
+                        placeholder="教练姓名，将显示在交付包头部和尾部"
+                        value={coachName}
+                        onChange={(e) => setCoachName(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-600 mb-1 block">交付备注（可选）</label>
+                      <textarea
+                        className="input-field text-sm h-16 resize-none"
+                        placeholder="如需在交付包中加入备注..."
+                        value={deliveryNote}
+                        onChange={(e) => setDeliveryNote(e.target.value)}
+                      />
+                    </div>
+                    <div className="flex gap-2 justify-end">
+                      <button
+                        className="btn-secondary text-sm"
+                        onClick={() => setShowDeliveryForm(false)}
+                      >取消</button>
+                      <button
+                        className="btn-primary text-sm"
+                        onClick={() => {
+                          if (!selectedClient) return;
+                          const pkg = generateDeliveryPackage(
+                            selectedClient.id,
+                            latestReview?.id,
+                            deliveryNote || undefined,
+                            coachName || undefined
+                          );
+                          setViewingPackage(pkg);
+                          setShowDeliveryForm(false);
+                          setDeliveryNote("");
+                        }}
+                      >确认生成</button>
+                    </div>
+                  </div>
+                )}
                 {clientDeliveryPackages.length > 0 && (
                   <div>
                     <h4 className="text-xs font-medium text-slate-500 mb-2 flex items-center gap-1">

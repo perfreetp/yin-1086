@@ -15,11 +15,14 @@ import {
   ChevronRight,
   AlertCircle,
   CheckCircle,
+  Send,
+  File,
+  ListChecks,
 } from "lucide-react";
 import { useSleepCoachStore } from "../store";
 import PageHeader from "../components/PageHeader";
 import { IntensityBadge, StatusBadge } from "../components/Badges";
-import type { MaterialTemplate, Intensity, Client, ProgramFlow } from "../types";
+import type { MaterialTemplate, Intensity, Client, ProgramFlow, MaterialSendRecord, MaterialSendStatus } from "../types";
 import { programFlows, getFlowByProgram } from "../data/programFlows";
 import { cn } from "../lib/utils";
 
@@ -38,6 +41,9 @@ export default function MaterialsPage() {
   const materials = useSleepCoachStore((s) => s.materials);
   const clients = useSleepCoachStore((s) => s.clients);
   const applyFlowToClient = useSleepCoachStore((s) => s.applyFlowToClient);
+  const materialSendRecords = useSleepCoachStore((s) => s.materialSendRecords);
+  const updateMaterialSendStatus = useSleepCoachStore((s) => s.updateMaterialSendStatus);
+  const generateWeekMaterialRecords = useSleepCoachStore((s) => s.generateWeekMaterialRecords);
 
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("全部");
@@ -49,8 +55,42 @@ export default function MaterialsPage() {
   const [appliedSuccess, setAppliedSuccess] = useState<string | null>(null);
   const [appliedFlowView, setAppliedFlowView] = useState<ProgramFlow | null>(null);
   const [appliedClientView, setAppliedClientView] = useState<Client | null>(null);
+  const [activeTab, setActiveTab] = useState<"library" | "sendlist">("library");
+  const [selectedSendClient, setSelectedSendClient] = useState<string>("");
+  const [checkedRecords, setCheckedRecords] = useState<Set<string>>(new Set());
 
   const activeClients = clients.filter((c) => c.status !== "已结案");
+
+  const sendListData = useMemo(() => {
+    const clientIdsWithPending = new Set<string>();
+    materialSendRecords.forEach((r) => {
+      const client = clients.find((c) => c.id === r.clientId);
+      if (client && client.status !== "已结案") {
+        clientIdsWithPending.add(r.clientId);
+      }
+    });
+
+    return activeClients
+      .filter((c) => clientIdsWithPending.has(c.id))
+      .map((c) => {
+        const records = materialSendRecords
+          .filter((r) => r.clientId === c.id)
+          .sort((a, b) => a.weekNumber - b.weekNumber);
+        const pending = records.filter((r) => r.status === "pending");
+        const sent = records.filter((r) => r.status === "sent");
+        const applied = records.filter((r) => r.status === "applied");
+        return { client: c, records, pending, sent, applied };
+      })
+      .filter((d) => d.pending.length > 0)
+      .sort((a, b) => b.pending.length - a.pending.length);
+  }, [activeClients, materialSendRecords, clients]);
+
+  const batchMarkSent = () => {
+    checkedRecords.forEach((id) => {
+      updateMaterialSendStatus(id, "sent");
+    });
+    setCheckedRecords(new Set());
+  };
 
   const filtered = useMemo(() => {
     return materials.filter((m) => {
@@ -101,6 +141,49 @@ export default function MaterialsPage() {
     <div>
       <PageHeader title="训练素材" subtitle="认知练习库、作业模板与流程版本管理" />
 
+      <div className="card overflow-hidden mb-6">
+        <div className="flex items-center gap-2 p-2 border-b border-slate-100">
+          {([
+            { key: "library" as const, label: "素材库", icon: BookOpen },
+            { key: "sendlist" as const, label: "发送清单", icon: ListChecks },
+          ]).map((tab) => (
+            <button
+              key={tab.key}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                activeTab === tab.key
+                  ? "bg-primary-700 text-white"
+                  : "text-slate-600 hover:bg-slate-100"
+              )}
+              onClick={() => setActiveTab(tab.key)}
+            >
+              <tab.icon className="w-4 h-4" />
+              {tab.label}
+              {tab.key === "sendlist" && sendListData.length > 0 && (
+                <span className={cn(
+                  "text-xs px-1.5 py-0.5 rounded-full",
+                  activeTab === tab.key ? "bg-white/20 text-white" : "bg-warning-500/20 text-warning-600"
+                )}>
+                  {sendListData.reduce((s, d) => s + d.pending.length, 0)}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {activeTab === "sendlist" ? (
+        <SendListView
+          sendListData={sendListData}
+          checkedRecords={checkedRecords}
+          setCheckedRecords={setCheckedRecords}
+          batchMarkSent={batchMarkSent}
+          updateMaterialSendStatus={updateMaterialSendStatus}
+          selectedSendClient={selectedSendClient}
+          setSelectedSendClient={setSelectedSendClient}
+          generateWeekMaterialRecords={generateWeekMaterialRecords}
+        />
+      ) : (
       <div className="grid grid-cols-12 gap-6">
         <div className="col-span-5 space-y-4">
           <div className="card p-4">
@@ -311,6 +394,7 @@ export default function MaterialsPage() {
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }
@@ -451,4 +535,187 @@ function CategoryIcon({ category }: { category: string }) {
   };
   const Icon = icons[category] || BookOpen;
   return <Icon className="w-4 h-4 text-primary-500" />;
+}
+
+function SendListView({
+  sendListData,
+  checkedRecords,
+  setCheckedRecords,
+  batchMarkSent,
+  updateMaterialSendStatus,
+  selectedSendClient,
+  setSelectedSendClient,
+  generateWeekMaterialRecords,
+}: {
+  sendListData: { client: Client; records: MaterialSendRecord[]; pending: MaterialSendRecord[]; sent: MaterialSendRecord[]; applied: MaterialSendRecord[] }[];
+  checkedRecords: Set<string>;
+  setCheckedRecords: React.Dispatch<React.SetStateAction<Set<string>>>;
+  batchMarkSent: () => void;
+  updateMaterialSendStatus: (id: string, status: MaterialSendStatus) => void;
+  selectedSendClient: string;
+  setSelectedSendClient: (id: string) => void;
+  generateWeekMaterialRecords: (clientId: string) => void;
+}) {
+  const toggleCheck = (id: string) => {
+    setCheckedRecords((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAllForClient = (records: MaterialSendRecord[]) => {
+    const pendingIds = records.filter((r) => r.status === "pending").map((r) => r.id);
+    const allChecked = pendingIds.every((id) => checkedRecords.has(id));
+    setCheckedRecords((prev) => {
+      const next = new Set(prev);
+      if (allChecked) {
+        pendingIds.forEach((id) => next.delete(id));
+      } else {
+        pendingIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-slate-600">
+          按来访者汇总本周待发送素材，勾选后可批量标记已发送
+        </p>
+        {checkedRecords.size > 0 && (
+          <button
+            className="btn-primary flex items-center gap-2"
+            onClick={batchMarkSent}
+          >
+            <Send className="w-4 h-4" />
+            批量标记已发送（{checkedRecords.size}）
+          </button>
+        )}
+      </div>
+
+      {sendListData.length === 0 ? (
+        <div className="card p-12 text-center">
+          <ListChecks className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+          <h3 className="font-serif text-lg font-semibold text-slate-600 mb-2">
+            暂无待发送素材
+          </h3>
+          <p className="text-sm text-slate-500">
+            套用流程后会自动生成本周素材清单，也可点击下方按钮为来访者刷新素材
+          </p>
+          <div className="flex gap-3 justify-center mt-4">
+            <select
+              className="input-field text-sm w-48"
+              value={selectedSendClient}
+              onChange={(e) => setSelectedSendClient(e.target.value)}
+            >
+              <option value="">选择来访者...</option>
+              {sendListData.length === 0 && (
+                <option value="">暂无待发送</option>
+              )}
+            </select>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {sendListData.map(({ client, pending, sent, applied }) => (
+            <div key={client.id} className="card overflow-hidden">
+              <div className="flex items-center gap-3 p-4 border-b border-slate-100 bg-slate-50/50">
+                <div className={cn(
+                  "w-10 h-10 rounded-xl flex items-center justify-center text-white font-medium",
+                  client.gender === "女" ? "bg-rose-400" : "bg-primary-500"
+                )}>
+                  {client.name.slice(0, 1)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-serif text-base font-semibold text-slate-800">{client.name}</span>
+                    <span className="text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                      W{client.currentWeek}/{client.programType}
+                    </span>
+                  </div>
+                  <div className="flex gap-3 text-xs text-slate-500 mt-0.5">
+                    <span className="text-amber-600">待发送 {pending.length}</span>
+                    <span className="text-primary-600">已发送 {sent.length}</span>
+                    <span className="text-mint-600">已套用 {applied.length}</span>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 transition-colors"
+                    onClick={() => generateWeekMaterialRecords(client.id)}
+                  >
+                    刷新素材
+                  </button>
+                  {pending.length > 0 && (
+                    <button
+                      className="text-xs px-3 py-1.5 rounded-lg bg-primary-50 text-primary-600 hover:bg-primary-100 transition-colors flex items-center gap-1"
+                      onClick={() => toggleAllForClient(pending)}
+                    >
+                      {pending.every((r) => checkedRecords.has(r.id)) ? "取消全选" : "全选"}
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="divide-y divide-slate-50">
+                {pending.map((rec) => (
+                  <div key={rec.id} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50/50 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={checkedRecords.has(rec.id)}
+                      onChange={() => toggleCheck(rec.id)}
+                      className="w-4 h-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                    />
+                    <div className="w-7 h-7 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
+                      <File className="w-3.5 h-3.5 text-amber-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-700 truncate">{rec.materialName}</p>
+                      <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-0.5">
+                        <span>第{rec.weekNumber}周</span>
+                        {rec.taskName && (
+                          <>
+                            <span>·</span>
+                            <span className="text-primary-500">关联任务：{rec.taskName}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      className="text-xs px-2.5 py-1 rounded-lg border border-primary-200 text-primary-600 hover:bg-primary-50 transition-colors flex items-center gap-1"
+                      onClick={() => updateMaterialSendStatus(rec.id, "sent")}
+                    >
+                      <Send className="w-3 h-3" />
+                      标记已发送
+                    </button>
+                  </div>
+                ))}
+                {sent.map((rec) => (
+                  <div key={rec.id} className="flex items-center gap-3 px-4 py-3 bg-slate-50/30">
+                    <div className="w-4" />
+                    <div className="w-7 h-7 rounded-lg bg-primary-50 flex items-center justify-center flex-shrink-0">
+                      <Send className="w-3.5 h-3.5 text-primary-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-slate-600 truncate">{rec.materialName}</p>
+                      <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-0.5">
+                        <span>第{rec.weekNumber}周</span>
+                        {rec.sentAt && <span>· 发送于 {rec.sentAt}</span>}
+                        {rec.taskName && <span className="text-primary-500">· {rec.taskName}</span>}
+                      </div>
+                    </div>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary-50 text-primary-600 border border-primary-100">
+                      已发送
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
