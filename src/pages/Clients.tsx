@@ -4,6 +4,7 @@ import { useSleepCoachStore } from "../store";
 import PageHeader from "../components/PageHeader";
 import { StatusBadge, IntensityBadge, CompletionBadge } from "../components/Badges";
 import ProgressBar from "../components/ProgressBar";
+import NewClientModal from "../components/NewClientModal";
 import type { Client, ClientStatus, ProgramType, Intensity } from "../types";
 import { cn } from "../lib/utils";
 
@@ -93,6 +94,7 @@ export default function ClientsPage() {
   const [filterStatus, setFilterStatus] = useState<ClientStatus | "全部">("全部");
   const [filterProgram, setFilterProgram] = useState<ProgramType | "全部">("全部");
   const [filterIntensity, setFilterIntensity] = useState<Intensity | "全部">("全部");
+  const [showNewModal, setShowNewModal] = useState(false);
 
   const filtered = useMemo(() => {
     return clients.filter((c) => {
@@ -122,7 +124,7 @@ export default function ClientsPage() {
         title="个案列表"
         subtitle="管理所有来访者的干预进度与状态追踪"
         actions={
-          <button className="btn-primary flex items-center gap-2">
+          <button className="btn-primary flex items-center gap-2" onClick={() => setShowNewModal(true)}>
             <Plus className="w-4 h-4" />
             新建个案
           </button>
@@ -239,6 +241,11 @@ export default function ClientsPage() {
           <p>没有找到匹配的个案</p>
         </div>
       )}
+
+      <NewClientModal
+        open={showNewModal}
+        onClose={() => setShowNewModal(false)}
+      />
     </div>
   );
 }

@@ -2,6 +2,48 @@ export type ProgramType = "6周" | "8周";
 export type Intensity = "入门" | "标准" | "强化";
 export type AlertLevel = "low" | "medium" | "high";
 export type ClientStatus = "进行中" | "待跟进" | "已结案" | "预警";
+export type AppointmentType = "初次评估" | "周复盘" | "阶段总结" | "紧急跟进";
+
+export interface WeekPlan {
+  weekNumber: number;
+  week?: number;
+  focus: string;
+  tasks: string[];
+  materials: string[];
+}
+
+export interface ProgramFlow {
+  id: string;
+  name: string;
+  programType: ProgramType;
+  intensity: Intensity;
+  weeks: WeekPlan[];
+  description: string;
+}
+
+export interface AppliedFlow {
+  flowId: string;
+  appliedAt: string;
+  currentWeekPlan: WeekPlan | null;
+}
+
+export interface BoundarySettings {
+  reminderFrequency: "每日" | "隔日" | "每周";
+  doNotDisturbStart: string;
+  doNotDisturbEnd: string;
+  weekendReduce: boolean;
+  lostContactDays: number;
+  lowComplianceRate: number;
+  wakeDriftMinutes: number;
+  autoRemindDiary: boolean;
+  emailNotify: boolean;
+  dailySummary: boolean;
+  remindDiaryUnsubmitted: boolean;
+  emailAlerts: boolean;
+  dndStartTime: string;
+  dndEndTime: string;
+  weekendReduced: boolean;
+}
 
 export interface Client {
   id: string;
@@ -21,6 +63,7 @@ export interface Client {
   diaryCompletionRate: number;
   tags: string[];
   notes?: string;
+  appliedFlow?: AppliedFlow;
 }
 
 export interface SleepDiary {
@@ -52,6 +95,9 @@ export interface WeeklyReview {
   tasks: string[];
   summary: string;
   createdAt: string;
+  nextWindowBed?: string;
+  nextWindowWake?: string;
+  reasoning?: string;
 }
 
 export interface Obstacle {
@@ -68,7 +114,7 @@ export interface Appointment {
   clientId: string;
   date: string;
   time: string;
-  type: string;
+  type: AppointmentType | string;
   notes?: string;
   completed: boolean;
 }
@@ -90,4 +136,15 @@ export interface MaterialTemplate {
   intensity: Intensity | "通用";
   content: string;
   isBuiltIn: boolean;
+}
+
+export interface StageSummary {
+  id: string;
+  clientId: string;
+  generatedAt: string;
+  title: string;
+  content: string;
+  date?: string;
+  period?: string;
+  fullText?: string;
 }

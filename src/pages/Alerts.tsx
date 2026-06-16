@@ -10,11 +10,13 @@ import {
   Clock,
   Shield,
   ChevronRight,
+  Save,
+  CheckCircle,
 } from "lucide-react";
 import { useSleepCoachStore } from "../store";
 import PageHeader from "../components/PageHeader";
 import { AlertLevelBadge, StatusBadge } from "../components/Badges";
-import type { Alert, Client } from "../types";
+import type { Alert, Client, BoundarySettings } from "../types";
 import { cn } from "../lib/utils";
 
 const alertTypeConfig: Record<string, { icon: typeof Bell; color: string; label: string }> = {
@@ -27,8 +29,13 @@ export default function AlertsPage() {
   const alerts = useSleepCoachStore((s) => s.alerts);
   const clients = useSleepCoachStore((s) => s.clients);
   const resolveAlert = useSleepCoachStore((s) => s.resolveAlert);
+  const boundarySettings = useSleepCoachStore((s) => s.boundarySettings);
+  const saveBoundarySettings = useSleepCoachStore((s) => s.saveBoundarySettings);
+
   const [filter, setFilter] = useState<"全部" | "未处理" | "已处理">("未处理");
   const [showSettings, setShowSettings] = useState(false);
+  const [form, setForm] = useState<BoundarySettings>(boundarySettings);
+  const [saved, setSaved] = useState(false);
 
   const filteredAlerts = useMemo(() => {
     let list = [...alerts].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -48,6 +55,17 @@ export default function AlertsPage() {
     };
   }, [alerts]);
 
+  const handleSave = () => {
+    saveBoundarySettings(form);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  const openSettings = () => {
+    setForm(boundarySettings);
+    setShowSettings(!showSettings);
+  };
+
   return (
     <div>
       <PageHeader
@@ -56,7 +74,7 @@ export default function AlertsPage() {
         actions={
           <button
             className="btn-secondary flex items-center gap-2"
-            onClick={() => setShowSettings(!showSettings)}
+            onClick={openSettings}
           >
             <Settings className="w-4 h-4" />
             边界设置
@@ -66,84 +84,165 @@ export default function AlertsPage() {
 
       {showSettings && (
         <div className="card p-6 mb-6 animate-slide-up">
-          <div className="flex items-center gap-3 mb-5">
-            <div className="w-10 h-10 rounded-lg bg-primary-100 flex items-center justify-center">
-              <Shield className="w-5 h-5 text-primary-600" />
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-primary-100 flex items-center justify-center">
+                <Shield className="w-5 h-5 text-primary-600" />
+              </div>
+              <div>
+                <h3 className="font-serif text-lg font-semibold text-primary-800">
+                  个案边界设置
+                </h3>
+                <p className="text-sm text-slate-500">设置提醒频率与边界，避免过度打扰来访者</p>
+              </div>
             </div>
-            <div>
-              <h3 className="font-serif text-lg font-semibold text-primary-800">
-                个案边界设置
-              </h3>
-              <p className="text-sm text-slate-500">设置提醒频率与边界，避免过度打扰来访者</p>
-            </div>
+            <button
+              className={cn(
+                "btn-primary flex items-center gap-2",
+                saved && "bg-mint-500 hover:bg-mint-500"
+              )}
+              onClick={handleSave}
+            >
+              {saved ? (
+                <>
+                  <CheckCircle className="w-4 h-4" />
+                  已保存
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4" />
+                  保存设置
+                </>
+              )}
+            </button>
           </div>
+
           <div className="grid grid-cols-3 gap-4">
             <div className="p-4 rounded-xl bg-slate-50">
               <h4 className="text-sm font-medium text-slate-700 mb-3">提醒频率</h4>
-              <div className="space-y-2">
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" defaultChecked className="rounded border-slate-300 text-primary-600" />
+              <div className="space-y-2.5">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.remindDiaryUnsubmitted}
+                    onChange={(e) =>
+                      setForm({ ...form, remindDiaryUnsubmitted: e.target.checked })
+                    }
+                    className="rounded border-slate-300 text-primary-600"
+                  />
                   <span className="text-slate-600">日记未提交时自动提醒</span>
                 </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" defaultChecked className="rounded border-slate-300 text-primary-600" />
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.emailAlerts}
+                    onChange={(e) => setForm({ ...form, emailAlerts: e.target.checked })}
+                    className="rounded border-slate-300 text-primary-600"
+                  />
                   <span className="text-slate-600">预警信息邮件通知</span>
                 </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" className="rounded border-slate-300 text-primary-600" />
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.dailySummary}
+                    onChange={(e) => setForm({ ...form, dailySummary: e.target.checked })}
+                    className="rounded border-slate-300 text-primary-600"
+                  />
                   <span className="text-slate-600">每日总结推送</span>
                 </label>
               </div>
             </div>
+
             <div className="p-4 rounded-xl bg-slate-50">
               <h4 className="text-sm font-medium text-slate-700 mb-3">勿扰时段</h4>
-              <div className="space-y-2 text-sm text-slate-600">
+              <div className="space-y-2.5 text-sm text-slate-600">
                 <div className="flex items-center gap-2">
                   <Clock className="w-4 h-4" />
                   <span>开始时间</span>
-                  <input type="time" defaultValue="22:00" className="ml-auto input-field w-28 py-1" />
+                  <input
+                    type="time"
+                    value={form.dndStartTime}
+                    onChange={(e) => setForm({ ...form, dndStartTime: e.target.value })}
+                    className="ml-auto input-field w-28 py-1"
+                  />
                 </div>
                 <div className="flex items-center gap-2">
                   <Clock className="w-4 h-4" />
                   <span>结束时间</span>
-                  <input type="time" defaultValue="08:00" className="ml-auto input-field w-28 py-1" />
+                  <input
+                    type="time"
+                    value={form.dndEndTime}
+                    onChange={(e) => setForm({ ...form, dndEndTime: e.target.value })}
+                    className="ml-auto input-field w-28 py-1"
+                  />
                 </div>
-                <label className="flex items-center gap-2 text-sm pt-2">
-                  <input type="checkbox" defaultChecked className="rounded border-slate-300 text-primary-600" />
+                <label className="flex items-center gap-2 text-sm pt-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.weekendReduced}
+                    onChange={(e) => setForm({ ...form, weekendReduced: e.target.checked })}
+                    className="rounded border-slate-300 text-primary-600"
+                  />
                   <span>周末减少提醒频率</span>
                 </label>
               </div>
             </div>
+
             <div className="p-4 rounded-xl bg-slate-50">
               <h4 className="text-sm font-medium text-slate-700 mb-3">预警阈值</h4>
-              <div className="space-y-2 text-sm text-slate-600">
+              <div className="space-y-2.5 text-sm text-slate-600">
                 <div className="flex items-center justify-between">
                   <span>失联预警</span>
-                  <select className="input-field w-20 py-1">
-                    <option>3天</option>
-                    <option selected>5天</option>
-                    <option>7天</option>
+                  <select
+                    className="input-field w-20 py-1"
+                    value={form.lostContactDays}
+                    onChange={(e) =>
+                      setForm({ ...form, lostContactDays: Number(e.target.value) })
+                    }
+                  >
+                    <option value={3}>3天</option>
+                    <option value={5}>5天</option>
+                    <option value={7}>7天</option>
                   </select>
                 </div>
                 <div className="flex items-center justify-between">
                   <span>执行率预警</span>
-                  <select className="input-field w-20 py-1">
-                    <option>30%</option>
-                    <option selected>50%</option>
-                    <option>70%</option>
+                  <select
+                    className="input-field w-20 py-1"
+                    value={form.lowComplianceRate}
+                    onChange={(e) =>
+                      setForm({ ...form, lowComplianceRate: Number(e.target.value) })
+                    }
+                  >
+                    <option value={30}>30%</option>
+                    <option value={50}>50%</option>
+                    <option value={70}>70%</option>
                   </select>
                 </div>
                 <div className="flex items-center justify-between">
                   <span>起床漂移</span>
-                  <select className="input-field w-20 py-1">
-                    <option>15分</option>
-                    <option selected>30分</option>
-                    <option>60分</option>
+                  <select
+                    className="input-field w-20 py-1"
+                    value={form.wakeDriftMinutes}
+                    onChange={(e) =>
+                      setForm({ ...form, wakeDriftMinutes: Number(e.target.value) })
+                    }
+                  >
+                    <option value={15}>15分</option>
+                    <option value={30}>30分</option>
+                    <option value={60}>60分</option>
                   </select>
                 </div>
               </div>
             </div>
           </div>
+
+          {saved && (
+            <div className="mt-4 p-3 rounded-xl bg-mint-50 border border-mint-200 flex items-center gap-2 text-sm text-mint-700">
+              <CheckCircle className="w-4 h-4 flex-shrink-0" />
+              边界设置已保存，刷新页面后仍然生效
+            </div>
+          )}
         </div>
       )}
 

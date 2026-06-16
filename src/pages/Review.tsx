@@ -14,11 +14,19 @@ import {
   TrendingUp,
   Moon,
   Sun,
+  Sparkles,
+  Target,
+  BookOpen,
+  Calendar,
+  Download,
+  FileText,
+  RefreshCw,
 } from "lucide-react";
 import { useSleepCoachStore } from "../store";
 import PageHeader from "../components/PageHeader";
+import Modal from "../components/Modal";
 import { StatusBadge, IntensityBadge } from "../components/Badges";
-import type { Client } from "../types";
+import type { Client, WeeklyReview, StageSummary as StageSummaryType } from "../types";
 import { cn } from "../lib/utils";
 import {
   BarChart,
@@ -37,17 +45,26 @@ export default function ReviewPage() {
   const obstacles = useSleepCoachStore((s) => s.obstacles);
   const getClientDiaries = useSleepCoachStore((s) => s.getClientDiaries);
   const addObstacle = useSleepCoachStore((s) => s.addObstacle);
+  const generateSmartReview = useSleepCoachStore((s) => s.generateSmartReview);
+  const getCurrentWeekPlan = useSleepCoachStore((s) => s.getCurrentWeekPlan);
+  const generateStageSummary = useSleepCoachStore((s) => s.generateStageSummary);
+
   const [selectedClientId, setSelectedClientId] = useState<string | null>(
     clients[0]?.id || null
   );
   const [copied, setCopied] = useState(false);
+  const [copiedSummary, setCopiedSummary] = useState(false);
   const [newObstacle, setNewObstacle] = useState({ category: "", description: "" });
   const [showObstacleForm, setShowObstacleForm] = useState(false);
+  const [smartReview, setSmartReview] = useState<WeeklyReview | null>(null);
+  const [stageSummary, setStageSummary] = useState<StageSummaryType | null>(null);
+  const [showSummaryModal, setShowSummaryModal] = useState(false);
 
   const selectedClient = clients.find((c) => c.id === selectedClientId);
   const clientReviews = selectedClient ? reviews.filter((r) => r.clientId === selectedClient.id) : [];
   const clientObstacles = selectedClient ? obstacles.filter((o) => o.clientId === selectedClient.id) : [];
-  const latestReview = clientReviews[clientReviews.length - 1];
+  const latestReview = smartReview || clientReviews[clientReviews.length - 1];
+  const currentWeekPlan = selectedClient ? getCurrentWeekPlan(selectedClient.id) : null;
 
   const weeklyData = useMemo(() => {
     if (!selectedClient) return [];
@@ -80,6 +97,21 @@ export default function ReviewPage() {
     setShowObstacleForm(false);
   };
 
+  const handleGenerateSmart = () => {
+    if (!selectedClient) return;
+    const review = generateSmartReview(selectedClient.id);
+    if (review) {
+      setSmartReview(review);
+    }
+  };
+
+  const handleGenerateSummary = () => {
+    if (!selectedClient) return;
+    const summary = generateStageSummary(selectedClient.id);
+    setStageSummary(summary);
+    setShowSummaryModal(true);
+  };
+
   const generateWeeklyTask = () => {
     if (!selectedClient || !latestReview) return "";
     return `【${selectedClient.name} · 第${latestReview.weekNumber}周睡眠任务单】
@@ -88,14 +120,18 @@ export default function ReviewPage() {
 · 平均睡眠效率：${latestReview.avgSleepEfficiency}%
 · 平均睡眠时长：${latestReview.avgTotalSleep}小时
 · 睡眠窗口调整：${latestReview.sleepWindowAdjust}
+${smartReview?.nextWindowBed && smartReview?.nextWindowWake ? `· 下周睡眠窗口：${smartReview.nextWindowBed} - ${smartReview.nextWindowWake}` : ""}
 
 🎯 下周核心任务
 ${latestReview.tasks.map((t, i) => `${i + 1}. ${t}`).join("\n")}
 
-📝 教练备注
+${smartReview?.reasoning ? `💡 调整说明
+${smartReview.reasoning}
+
+` : ""}📝 教练备注
 ${latestReview.summary}
 
-🌙 睡眠窗口：${selectedClient.sleepWindowBed} - ${selectedClient.sleepWindowWake}
+🌙 睡眠窗口：${smartReview?.nextWindowBed || selectedClient.sleepWindowBed} - ${smartReview?.nextWindowWake || selectedClient.sleepWindowWake}
 如有任何困难请及时沟通，我们一起调整。`;
   };
 
@@ -103,6 +139,13 @@ ${latestReview.summary}
     navigator.clipboard.writeText(generateWeeklyTask());
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCopySummary = () => {
+    if (!stageSummary) return;
+    navigator.clipboard.writeText(stageSummary.fullText);
+    setCopiedSummary(true);
+    setTimeout(() => setCopiedSummary(false), 2000);
   };
 
   const activeClients = clients.filter((c) => c.status !== "已结案");
@@ -122,7 +165,10 @@ ${latestReview.summary}
               {activeClients.map((c) => (
                 <button
                   key={c.id}
-                  onClick={() => setSelectedClientId(c.id)}
+                  onClick={() => {
+                    setSelectedClientId(c.id);
+                    setSmartReview(null);
+                  }}
                   className={cn(
                     "w-full flex items-center gap-3 p-3 rounded-xl text-left transition-all",
                     selectedClientId === c.id
@@ -171,6 +217,64 @@ ${latestReview.summary}
             <>
               <ClientOverviewCard client={selectedClient} />
 
+              {currentWeekPlan && (
+                <div className="card p-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="section-title flex items-center gap-2">
+                      <Target className="w-5 h-5" />
+                      本周干预重点 · W{selectedClient.currentWeek}
+                      <span className="text-xs font-normal text-slate-400 ml-2">
+                        {selectedClient.intensity} · {selectedClient.programType}
+                      </span>
+                    </h3>
+                  </div>
+                  <div className="bg-mint-50 rounded-xl p-4 border border-mint-100 mb-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Sparkles className="w-4 h-4 text-mint-600" />
+                      <span className="text-sm font-medium text-mint-700">本周焦点</span>
+                    </div>
+                    <p className="text-sm text-slate-700 leading-relaxed">
+                      {currentWeekPlan.focus}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <h4 className="text-xs font-medium text-slate-500 mb-2 flex items-center gap-1">
+                        <ClipboardList className="w-3.5 h-3.5" />
+                        本周任务清单
+                      </h4>
+                      <div className="space-y-1.5">
+                        {currentWeekPlan.tasks.map((task, i) => (
+                          <div key={i} className="flex items-start gap-2 p-2 rounded-lg bg-slate-50">
+                            <span className="text-[10px] w-4 h-4 rounded bg-primary-700 text-white flex items-center justify-center flex-shrink-0 mt-0.5">
+                              {i + 1}
+                            </span>
+                            <span className="text-xs text-slate-700">{task}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-medium text-slate-500 mb-2 flex items-center gap-1">
+                        <BookOpen className="w-3.5 h-3.5" />
+                        配套素材
+                      </h4>
+                      <div className="space-y-1.5">
+                        {currentWeekPlan.materials.map((mat, i) => (
+                          <div key={i} className="flex items-center gap-2 p-2 rounded-lg bg-slate-50">
+                            <FileText className="w-3.5 h-3.5 text-primary-500 flex-shrink-0" />
+                            <span className="text-xs text-slate-700">{mat}</span>
+                          </div>
+                        ))}
+                        {currentWeekPlan.materials.length === 0 && (
+                          <p className="text-xs text-slate-400 p-2">暂无配套素材</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="card p-5">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="section-title flex items-center gap-2">
@@ -183,9 +287,26 @@ ${latestReview.summary}
                   <BarChart data={weeklyData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis dataKey="week" tick={{ fontSize: 12 }} stroke="#94a3b8" />
-                    <YAxis yAxisId="left" tick={{ fontSize: 12 }} stroke="#94a3b8" domain={[0, 100]} />
-                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} stroke="#94a3b8" domain={[0, 10]} />
-                    <ReferenceLine yAxisId="left" y={85} stroke="#4ecdc4" strokeDasharray="5 5" label={{ value: "达标线", fontSize: 10, fill: "#4ecdc4" }} />
+                    <YAxis
+                      yAxisId="left"
+                      tick={{ fontSize: 12 }}
+                      stroke="#94a3b8"
+                      domain={[0, 100]}
+                    />
+                    <YAxis
+                      yAxisId="right"
+                      orientation="right"
+                      tick={{ fontSize: 12 }}
+                      stroke="#94a3b8"
+                      domain={[0, 10]}
+                    />
+                    <ReferenceLine
+                      yAxisId="left"
+                      y={85}
+                      stroke="#4ecdc4"
+                      strokeDasharray="5 5"
+                      label={{ value: "达标线", fontSize: 10, fill: "#4ecdc4" }}
+                    />
                     <Tooltip />
                     <Bar yAxisId="left" dataKey="效率" fill="#1e3a5f" radius={[4, 4, 0, 0]} />
                     <Bar yAxisId="right" dataKey="时长" fill="#4ecdc4" radius={[4, 4, 0, 0]} />
@@ -200,31 +321,67 @@ ${latestReview.summary}
                       <ClipboardList className="w-5 h-5" />
                       周任务单
                     </h3>
-                    <button
-                      className="btn-primary flex items-center gap-2"
-                      onClick={handleCopyTask}
-                      disabled={!latestReview}
-                    >
-                      {copied ? (
-                        <>
-                          <Check className="w-4 h-4" />
-                          已复制
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-4 h-4" />
-                          复制发送
-                        </>
-                      )}
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        className="btn-secondary flex items-center gap-2"
+                        onClick={handleGenerateSmart}
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        智能生成
+                      </button>
+                      <button
+                        className="btn-primary flex items-center gap-2"
+                        onClick={handleCopyTask}
+                        disabled={!latestReview}
+                      >
+                        {copied ? (
+                          <>
+                            <Check className="w-4 h-4" />
+                            已复制
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-4 h-4" />
+                            复制发送
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
+
+                  {smartReview && smartReview.reasoning && (
+                    <div className="mb-3 p-3 rounded-xl bg-warning-500/10 border border-warning-200">
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <RefreshCw className="w-3.5 h-3.5 text-warning-600" />
+                        <span className="text-xs font-medium text-warning-700">睡眠窗口调整建议</span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">{smartReview.reasoning}</p>
+                      {smartReview.nextWindowBed && smartReview.nextWindowWake && (
+                        <div className="mt-2 flex items-center gap-3 text-xs">
+                          <span className="flex items-center gap-1 text-primary-700 font-medium">
+                            <Moon className="w-3 h-3" />
+                            {smartReview.nextWindowBed}
+                          </span>
+                          <span className="text-slate-400">→</span>
+                          <span className="flex items-center gap-1 text-mint-700 font-medium">
+                            <Sun className="w-3 h-3" />
+                            {smartReview.nextWindowWake}
+                          </span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-mint-100 text-mint-700">
+                            已建议
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {latestReview ? (
-                    <div className="bg-sand-100 rounded-xl p-4 border border-sand-300 whitespace-pre-wrap text-sm text-slate-700 leading-relaxed">
+                    <div className="bg-sand-100 rounded-xl p-4 border border-sand-300 whitespace-pre-wrap text-sm text-slate-700 leading-relaxed max-h-[320px] overflow-y-auto">
                       {generateWeeklyTask()}
                     </div>
                   ) : (
                     <div className="text-center py-8 text-slate-400 text-sm">
-                      暂无上周回顾数据
+                      点击「智能生成」基于最近7天日记创建周任务单
                     </div>
                   )}
                 </div>
@@ -249,7 +406,9 @@ ${latestReview.summary}
                       <select
                         className="input-field"
                         value={newObstacle.category}
-                        onChange={(e) => setNewObstacle({ ...newObstacle, category: e.target.value })}
+                        onChange={(e) =>
+                          setNewObstacle({ ...newObstacle, category: e.target.value })
+                        }
                       >
                         <option value="">选择障碍类别</option>
                         <option value="工作安排">工作安排</option>
@@ -263,7 +422,9 @@ ${latestReview.summary}
                         className="input-field h-20 resize-none"
                         placeholder="描述具体障碍..."
                         value={newObstacle.description}
-                        onChange={(e) => setNewObstacle({ ...newObstacle, description: e.target.value })}
+                        onChange={(e) =>
+                          setNewObstacle({ ...newObstacle, description: e.target.value })
+                        }
                       />
                       <div className="flex gap-2">
                         <button className="btn-primary flex-1" onClick={handleAddObstacle}>
@@ -279,9 +440,12 @@ ${latestReview.summary}
                     </div>
                   )}
 
-                  <div className="space-y-2 max-h-[260px] overflow-y-auto">
+                  <div className="space-y-2 max-h-[340px] overflow-y-auto">
                     {clientObstacles.map((o) => (
-                      <div key={o.id} className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                      <div
+                        key={o.id}
+                        className="p-3 rounded-xl bg-slate-50 border border-slate-100"
+                      >
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-[10px] px-2 py-0.5 rounded-full bg-warning-500/15 text-warning-600">
                             {o.category}
@@ -311,9 +475,12 @@ ${latestReview.summary}
                     <FileDown className="w-5 h-5" />
                     阶段总结
                   </h3>
-                  <button className="btn-primary flex items-center gap-2">
-                    <FileDown className="w-4 h-4" />
-                    导出总结
+                  <button
+                    className="btn-primary flex items-center gap-2"
+                    onClick={handleGenerateSummary}
+                  >
+                    <Download className="w-4 h-4" />
+                    生成总结
                   </button>
                 </div>
                 <div className="grid grid-cols-3 gap-4">
@@ -326,7 +493,8 @@ ${latestReview.summary}
                   <div className="p-4 rounded-xl bg-mint-50">
                     <p className="text-xs text-mint-600 mb-1">累计记录</p>
                     <p className="font-serif text-lg font-semibold text-primary-800">
-                      {getClientDiaries(selectedClient.id).filter((d) => d.submitted).length} 天日记
+                      {getClientDiaries(selectedClient.id).filter((d) => d.submitted).length}{" "}
+                      天日记
                     </p>
                   </div>
                   <div className="p-4 rounded-xl bg-slate-100">
@@ -341,6 +509,60 @@ ${latestReview.summary}
           )}
         </div>
       </div>
+
+      <Modal
+        open={showSummaryModal}
+        onClose={() => setShowSummaryModal(false)}
+        title="阶段总结"
+        width="w-[700px]"
+        footer={
+          <>
+            <button
+              className="btn-secondary"
+              onClick={() => setShowSummaryModal(false)}
+            >
+              关闭
+            </button>
+            <button className="btn-primary flex items-center gap-2" onClick={handleCopySummary}>
+              {copiedSummary ? (
+                <>
+                  <Check className="w-4 h-4" />
+                  已复制
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4" />
+                  复制全文
+                </>
+              )}
+            </button>
+          </>
+        }
+      >
+        {stageSummary && selectedClient && (
+          <div className="space-y-4">
+            <div className="p-4 rounded-xl bg-primary-700 text-white">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-lg font-medium">
+                  {selectedClient.name.slice(0, 1)}
+                </div>
+                <div>
+                  <h4 className="font-serif text-lg font-semibold">{stageSummary.title}</h4>
+                  <p className="text-xs text-white/70">
+                    {stageSummary.date} · {stageSummary.period}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="bg-sand-100 rounded-xl p-4 border border-sand-300 whitespace-pre-wrap text-sm text-slate-700 leading-relaxed max-h-[500px] overflow-y-auto font-sans">
+              {stageSummary.fullText}
+            </div>
+            <p className="text-xs text-slate-400 text-center">
+              可直接复制全文发送给来访者，或作为咨询档案保存
+            </p>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
@@ -349,7 +571,10 @@ function ClientOverviewCard({ client }: { client: Client }) {
   const [expanded, setExpanded] = useState(true);
   return (
     <div className="card p-5">
-      <div className="flex items-center gap-4 cursor-pointer" onClick={() => setExpanded(!expanded)}>
+      <div
+        className="flex items-center gap-4 cursor-pointer"
+        onClick={() => setExpanded(!expanded)}
+      >
         <div
           className={cn(
             "w-14 h-14 rounded-2xl flex items-center justify-center text-white text-lg font-medium",
@@ -360,13 +585,19 @@ function ClientOverviewCard({ client }: { client: Client }) {
         </div>
         <div className="flex-1">
           <div className="flex items-center gap-3 mb-1">
-            <h2 className="font-serif text-xl font-semibold text-primary-800">{client.name}</h2>
+            <h2 className="font-serif text-xl font-semibold text-primary-800">
+              {client.name}
+            </h2>
             <StatusBadge status={client.status} />
             <IntensityBadge intensity={client.intensity} />
           </div>
           <div className="flex items-center gap-4 text-sm text-slate-500">
-            <span>{client.gender} · {client.age}岁</span>
-            <span>{client.programType}干预 · W{client.currentWeek}</span>
+            <span>
+              {client.gender} · {client.age}岁
+            </span>
+            <span>
+              {client.programType}干预 · W{client.currentWeek}
+            </span>
             <span className="flex items-center gap-1">
               <Moon className="w-3 h-3" />
               {client.sleepWindowBed}
@@ -378,7 +609,9 @@ function ClientOverviewCard({ client }: { client: Client }) {
         <div className="flex items-center gap-3">
           <div className="text-right">
             <p className="text-xs text-slate-500">日记完成率</p>
-            <p className="font-serif text-xl font-semibold text-mint-600">{client.diaryCompletionRate}%</p>
+            <p className="font-serif text-xl font-semibold text-mint-600">
+              {client.diaryCompletionRate}%
+            </p>
           </div>
           {expanded ? (
             <ChevronUp className="w-5 h-5 text-slate-400" />
@@ -393,7 +626,10 @@ function ClientOverviewCard({ client }: { client: Client }) {
             <p className="text-xs text-slate-500 mb-1">标签</p>
             <div className="flex gap-1 flex-wrap">
               {client.tags.map((t) => (
-                <span key={t} className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                <span
+                  key={t}
+                  className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600"
+                >
                   {t}
                 </span>
               ))}
@@ -404,7 +640,10 @@ function ClientOverviewCard({ client }: { client: Client }) {
             <div className="flex gap-1 flex-wrap">
               {client.boundaries.length > 0 ? (
                 client.boundaries.map((b) => (
-                  <span key={b} className="text-[10px] px-2 py-0.5 rounded-full bg-primary-50 text-primary-600">
+                  <span
+                    key={b}
+                    className="text-[10px] px-2 py-0.5 rounded-full bg-primary-50 text-primary-600"
+                  >
                     {b}
                   </span>
                 ))
