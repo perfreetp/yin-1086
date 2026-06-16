@@ -23,13 +23,15 @@ import {
   History,
   ChevronRight,
   CheckCircle,
+  Package,
 } from "lucide-react";
 import { useSleepCoachStore } from "../store";
 import PageHeader from "../components/PageHeader";
 import Modal from "../components/Modal";
 import AppointmentModal from "../components/AppointmentModal";
+import DeliveryPackageModal from "../components/DeliveryPackageModal";
 import { StatusBadge, IntensityBadge } from "../components/Badges";
-import type { Client, WeeklyReview, StageSummary as StageSummaryType } from "../types";
+import type { Client, WeeklyReview, StageSummary as StageSummaryType, DeliveryPackage } from "../types";
 import { cn } from "../lib/utils";
 import {
   BarChart,
@@ -54,6 +56,8 @@ export default function ReviewPage() {
   const generateStageSummary = useSleepCoachStore((s) => s.generateStageSummary);
   const getClientStageSummaries = useSleepCoachStore((s) => s.getClientStageSummaries);
   const getClientFlowHistory = useSleepCoachStore((s) => s.getClientFlowHistory);
+  const getClientDeliveryPackages = useSleepCoachStore((s) => s.getClientDeliveryPackages);
+  const generateDeliveryPackage = useSleepCoachStore((s) => s.generateDeliveryPackage);
   const openSidebar = useSleepCoachStore((s) => s.openSidebar);
   const createAppointment = useSleepCoachStore((s) => s.createAppointment);
 
@@ -70,6 +74,7 @@ export default function ReviewPage() {
   const [showAppointmentModal, setShowAppointmentModal] = useState(false);
   const [appointmentNotes, setAppointmentNotes] = useState("");
   const [viewingSummary, setViewingSummary] = useState<StageSummaryType | null>(null);
+  const [viewingPackage, setViewingPackage] = useState<DeliveryPackage | null>(null);
   const [reviewSaved, setReviewSaved] = useState(false);
 
   const selectedClient = clients.find((c) => c.id === selectedClientId);
@@ -83,6 +88,7 @@ export default function ReviewPage() {
   const currentWeekPlan = selectedClient ? getCurrentWeekPlan(selectedClient.id) : null;
   const clientSummaries = selectedClient ? getClientStageSummaries(selectedClient.id) : [];
   const clientFlowHistory = selectedClient ? getClientFlowHistory(selectedClient.id) : [];
+  const clientDeliveryPackages = selectedClient ? getClientDeliveryPackages(selectedClient.id) : [];
 
   const weeklyData = useMemo(() => {
     if (!selectedClient) return [];
@@ -701,6 +707,67 @@ ${latestReview.summary}
                   </div>
                 )}
               </div>
+
+              <div className="card p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="section-title flex items-center gap-2">
+                    <Package className="w-5 h-5" />
+                    来访者交付包
+                  </h3>
+                  <div className="flex gap-2 items-center">
+                    {clientDeliveryPackages.length > 0 && (
+                      <div className="text-xs text-slate-500 mr-2 flex items-center gap-1">
+                        <History className="w-3 h-3" />
+                        已生成 {clientDeliveryPackages.length} 份
+                      </div>
+                    )}
+                    <button
+                      className="btn-primary flex items-center gap-2"
+                      onClick={() => {
+                        if (!selectedClient) return;
+                        const pkg = generateDeliveryPackage(selectedClient.id, latestReview?.id);
+                        setViewingPackage(pkg);
+                      }}
+                    >
+                      <Download className="w-4 h-4" />
+                      生成交付包
+                    </button>
+                  </div>
+                </div>
+                <p className="text-sm text-slate-500 mb-4">
+                  一键合成周任务单、睡眠窗口建议、阶段总结为完整交付材料，可复制或下载。
+                </p>
+                {clientDeliveryPackages.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-medium text-slate-500 mb-2 flex items-center gap-1">
+                      <FileText className="w-3.5 h-3.5" />
+                      历史交付包
+                    </h4>
+                    <div className="grid grid-cols-2 gap-2">
+                      {clientDeliveryPackages.slice(0, 4).map((pkg) => (
+                        <button
+                          key={pkg.id}
+                          onClick={() => setViewingPackage(pkg)}
+                          className="p-3 rounded-xl bg-slate-50 hover:bg-primary-50 border border-slate-100 hover:border-primary-200 transition-colors text-left flex items-center gap-3"
+                        >
+                          <div className="w-8 h-8 rounded-lg bg-primary-100 flex items-center justify-center flex-shrink-0">
+                            <Package className="w-4 h-4 text-primary-600" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-slate-800 truncate">
+                              第{pkg.weekNumber}周交付包
+                            </p>
+                            <p className="text-[10px] text-slate-500">
+                              {pkg.generatedAt}
+                            </p>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </>
           )}
         </div>
@@ -805,6 +872,14 @@ ${latestReview.summary}
         initialClientId={selectedClientId || undefined}
         initialNotes={appointmentNotes}
       />
+
+      {viewingPackage && selectedClient && (
+        <DeliveryPackageModal
+          pkg={viewingPackage}
+          clientName={selectedClient.name}
+          onClose={() => setViewingPackage(null)}
+        />
+      )}
     </div>
   );
 }

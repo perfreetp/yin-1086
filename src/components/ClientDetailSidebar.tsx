@@ -23,11 +23,14 @@ import {
   StickyNote,
   CalendarClock,
   Sparkles,
+  File,
+  Send,
+  RotateCcw,
 } from "lucide-react";
 import { useSleepCoachStore } from "../store";
 import { StatusBadge, IntensityBadge } from "../components/Badges";
 import Modal from "../components/Modal";
-import type { Client, StageSummary, Appointment } from "../types";
+import type { Client, StageSummary, Appointment, MaterialSendRecord, MaterialSendStatus } from "../types";
 import { cn } from "../lib/utils";
 
 export default function ClientDetailSidebar() {
@@ -39,6 +42,9 @@ export default function ClientDetailSidebar() {
   const getClientAppointments = useSleepCoachStore((s) => s.getClientAppointments);
   const getClientFlowHistory = useSleepCoachStore((s) => s.getClientFlowHistory);
   const getClientStageSummaries = useSleepCoachStore((s) => s.getClientStageSummaries);
+  const getClientMaterialSendRecords = useSleepCoachStore((s) => s.getClientMaterialSendRecords);
+  const updateMaterialSendStatus = useSleepCoachStore((s) => s.updateMaterialSendStatus);
+  const generateWeekMaterialRecords = useSleepCoachStore((s) => s.generateWeekMaterialRecords);
   const openSidebar = useSleepCoachStore((s) => s.openSidebar);
   const toggleAppointmentCompleted = useSleepCoachStore(
     (s) => s.toggleAppointmentCompleted
@@ -49,6 +55,7 @@ export default function ClientDetailSidebar() {
     plan: true,
     diaries: true,
     appointments: true,
+    materials: true,
     boundaries: true,
     flowHistory: false,
     summaries: false,
@@ -72,6 +79,7 @@ export default function ClientDetailSidebar() {
     .slice(0, 8);
   const flowHistory = getClientFlowHistory(client.id);
   const summaries = getClientStageSummaries(client.id);
+  const materialRecords = getClientMaterialSendRecords(client.id);
 
   const toggle = (key: string) =>
     setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -360,6 +368,36 @@ export default function ClientDetailSidebar() {
           </SidebarSection>
 
           <SidebarSection
+            icon={<File className="w-4 h-4" />}
+            title="本周素材状态"
+            expanded={expanded.materials}
+            onToggle={() => toggle("materials")}
+            headerRight={
+              <button
+                onClick={() => generateWeekMaterialRecords(client.id)}
+                className="text-[10px] text-primary-600 hover:text-primary-700 flex items-center gap-0.5"
+              >
+                <RotateCcw className="w-3 h-3" />
+                刷新
+              </button>
+            }
+          >
+            <div className="space-y-1.5">
+              {materialRecords.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-3">暂无素材记录，套用流程后自动生成</p>
+              ) : (
+                materialRecords.slice(0, 10).map((rec) => (
+                  <MaterialRow
+                    key={rec.id}
+                    record={rec}
+                    onStatusChange={(status) => updateMaterialSendStatus(rec.id, status)}
+                  />
+                ))
+              )}
+            </div>
+          </SidebarSection>
+
+          <SidebarSection
             icon={<Shield className="w-4 h-4" />}
             title="边界设置"
             expanded={expanded.boundaries}
@@ -559,18 +597,20 @@ function SidebarSection({
   expanded,
   onToggle,
   children,
+  headerRight,
 }: {
   icon: React.ReactNode;
   title: string;
   expanded: boolean;
   onToggle: () => void;
   children: React.ReactNode;
+  headerRight?: React.ReactNode;
 }) {
   return (
     <div className="border border-slate-100 rounded-xl overflow-hidden bg-white">
-      <button
+      <div
+        className="flex items-center gap-2 p-3 hover:bg-slate-50 transition-colors cursor-pointer"
         onClick={onToggle}
-        className="w-full flex items-center gap-2 p-3 hover:bg-slate-50 transition-colors"
       >
         <div className="w-7 h-7 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center">
           {icon}
@@ -578,13 +618,77 @@ function SidebarSection({
         <span className="flex-1 text-sm font-medium text-slate-700 text-left">
           {title}
         </span>
+        {headerRight && <span onClick={(e) => e.stopPropagation()}>{headerRight}</span>}
         {expanded ? (
           <ChevronDown className="w-4 h-4 text-slate-400" />
         ) : (
           <ChevronRight className="w-4 h-4 text-slate-400" />
         )}
-      </button>
+      </div>
       {expanded && <div className="px-3 pb-3">{children}</div>}
+    </div>
+  );
+}
+
+function MaterialRow({
+  record,
+  onStatusChange,
+}: {
+  record: MaterialSendRecord;
+  onStatusChange: (status: MaterialSendStatus) => void;
+}) {
+  const statusConfig: Record<MaterialSendStatus, { label: string; color: string; icon: typeof File }> = {
+    pending: { label: "待发送", color: "text-amber-600 bg-amber-50 border-amber-200", icon: File },
+    sent: { label: "已发送", color: "text-primary-600 bg-primary-50 border-primary-200", icon: Send },
+    applied: { label: "已套用", color: "text-mint-600 bg-mint-50 border-mint-200", icon: CheckCircle },
+  };
+  const cfg = statusConfig[record.status];
+  const Icon = cfg.icon;
+
+  return (
+    <div className={cn("p-2 rounded-lg border", cfg.color)}>
+      <div className="flex items-center gap-2 mb-1">
+        <Icon className={cn("w-3.5 h-3.5 flex-shrink-0", cfg.color.split(" ")[0])} />
+        <span className="text-xs font-medium text-slate-700 flex-1 truncate">{record.materialName}</span>
+        <span className={cn("text-[9px] px-1.5 py-0.5 rounded font-medium", cfg.color)}>
+          {cfg.label}
+        </span>
+      </div>
+      <div className="flex items-center justify-between text-[10px] text-slate-500 pl-5.5">
+        <span>第{record.weekNumber}周</span>
+        {record.sentAt && <span>发送：{record.sentAt}</span>}
+        {record.appliedAt && !record.sentAt && <span>套用：{record.appliedAt}</span>}
+      </div>
+      {record.status !== "applied" && (
+        <div className="flex gap-1 mt-2 pl-5.5">
+          {record.status === "pending" && (
+            <button
+              onClick={() => onStatusChange("sent")}
+              className="text-[10px] px-2 py-0.5 rounded bg-white border border-slate-200 text-slate-600 hover:bg-primary-50 hover:text-primary-600 hover:border-primary-200 transition-colors flex items-center gap-0.5"
+            >
+              <Send className="w-2.5 h-2.5" />
+              标记已发送
+            </button>
+          )}
+          {record.status === "sent" && (
+            <button
+              onClick={() => onStatusChange("applied")}
+              className="text-[10px] px-2 py-0.5 rounded bg-white border border-slate-200 text-slate-600 hover:bg-mint-50 hover:text-mint-600 hover:border-mint-200 transition-colors flex items-center gap-0.5"
+            >
+              <CheckCircle className="w-2.5 h-2.5" />
+              标记已套用
+            </button>
+          )}
+          {record.status === "sent" && (
+            <button
+              onClick={() => onStatusChange("pending")}
+              className="text-[10px] px-2 py-0.5 rounded bg-white border border-slate-200 text-slate-500 hover:bg-slate-100 transition-colors"
+            >
+              撤销
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -15,6 +15,9 @@ import {
   WeekPlan,
   FlowApplyHistory,
   SidebarState,
+  DeliveryPackage,
+  MaterialSendRecord,
+  MaterialSendStatus,
 } from "../types";
 import {
   mockClients,
@@ -45,6 +48,8 @@ interface SleepCoachStore {
   stageSummaries: StageSummary[];
   flowApplyHistories: FlowApplyHistory[];
   sidebar: SidebarState;
+  deliveryPackages: DeliveryPackage[];
+  materialSendRecords: MaterialSendRecord[];
   selectedClientId: string | null;
 
   setSelectedClient: (id: string | null) => void;
@@ -55,12 +60,19 @@ interface SleepCoachStore {
   getClientAlerts: (clientId: string) => Alert[];
   getClientFlowHistory: (clientId: string) => FlowApplyHistory[];
   getClientStageSummaries: (clientId: string) => StageSummary[];
+  getClientDeliveryPackages: (clientId: string) => DeliveryPackage[];
+  getClientMaterialSendRecords: (clientId: string) => MaterialSendRecord[];
   getUnresolvedAlertsCount: () => number;
+  getFollowUpOverdueCount: () => number;
+  getUpcomingFollowUps: (days?: number) => Appointment[];
+  getOverdueFollowUps: () => Appointment[];
   resolveAlert: (alertId: string) => void;
   addObstacle: (obstacle: Omit<Obstacle, "id">) => void;
   addReview: (review: Omit<WeeklyReview, "id">) => WeeklyReview;
   updateClient: (clientId: string, updates: Partial<Client>) => void;
   saveStageSummary: (summary: StageSummary) => void;
+  saveDeliveryPackage: (pkg: DeliveryPackage) => void;
+  generateDeliveryPackage: (clientId: string, reviewId?: string) => DeliveryPackage;
 
   createClient: (data: {
     name: string;
@@ -94,6 +106,10 @@ interface SleepCoachStore {
 
   applyFlowToClient: (clientId: string, flowId: string, note?: string) => void;
   getCurrentWeekPlan: (clientId: string) => WeekPlan | null;
+
+  addMaterialSendRecord: (data: Omit<MaterialSendRecord, "id">) => MaterialSendRecord;
+  updateMaterialSendStatus: (recordId: string, status: MaterialSendStatus) => void;
+  generateWeekMaterialRecords: (clientId: string) => void;
 
   saveBoundarySettings: (settings: BoundarySettings) => void;
 
@@ -138,6 +154,8 @@ export const useSleepCoachStore = create<SleepCoachStore>((set, get) => ({
   stageSummaries: loadFromStorage("sct_summaries", [] as StageSummary[]),
   flowApplyHistories: loadFromStorage("sct_flow_histories", [] as FlowApplyHistory[]),
   sidebar: loadFromStorage("sct_sidebar", { open: false, clientId: null }),
+  deliveryPackages: loadFromStorage("sct_delivery_packages", [] as DeliveryPackage[]),
+  materialSendRecords: loadFromStorage("sct_material_sends", [] as MaterialSendRecord[]),
   selectedClientId: null,
 
   setSelectedClient: (id) => set({ selectedClientId: id }),
@@ -166,6 +184,40 @@ export const useSleepCoachStore = create<SleepCoachStore>((set, get) => ({
     get().stageSummaries
       .filter((s) => s.clientId === clientId)
       .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt)),
+
+  getClientDeliveryPackages: (clientId) =>
+    get().deliveryPackages
+      .filter((p) => p.clientId === clientId)
+      .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt)),
+
+  getClientMaterialSendRecords: (clientId) =>
+    get().materialSendRecords
+      .filter((r) => r.clientId === clientId)
+      .sort((a, b) => a.weekNumber - b.weekNumber || b.sentAt?.localeCompare(a.sentAt || "") || 0),
+
+  getFollowUpOverdueCount: () => {
+    const today = new Date().toISOString().split("T")[0];
+    return get().appointments.filter(
+      (a) => !a.completed && a.date < today
+    ).length;
+  },
+
+  getUpcomingFollowUps: (days = 7) => {
+    const today = new Date();
+    const limit = new Date(today.getTime() + days * 24 * 60 * 60 * 1000);
+    const todayStr = today.toISOString().split("T")[0];
+    const limitStr = limit.toISOString().split("T")[0];
+    return get().appointments
+      .filter((a) => !a.completed && a.date >= todayStr && a.date <= limitStr)
+      .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  },
+
+  getOverdueFollowUps: () => {
+    const today = new Date().toISOString().split("T")[0];
+    return get().appointments
+      .filter((a) => !a.completed && a.date < today)
+      .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  },
 
   getUnresolvedAlertsCount: () =>
     get().alerts.filter((a) => !a.resolved).length,
@@ -227,6 +279,97 @@ export const useSleepCoachStore = create<SleepCoachStore>((set, get) => ({
     }
     set({ stageSummaries: newList });
     saveToStorage("sct_summaries", newList);
+  },
+
+  saveDeliveryPackage: (pkg) => {
+    const existing = get().deliveryPackages.find((p) => p.id === pkg.id);
+    let newList;
+    if (existing) {
+      newList = get().deliveryPackages.map((p) =>
+        p.id === pkg.id ? pkg : p
+      );
+    } else {
+      newList = [...get().deliveryPackages, pkg];
+    }
+    set({ deliveryPackages: newList });
+    saveToStorage("sct_delivery_packages", newList);
+  },
+
+  generateDeliveryPackage: (clientId, reviewId) => {
+    const client = get().clients.find((c) => c.id === clientId);
+    if (!client) {
+      throw new Error("来访者不存在");
+    }
+
+    let review: WeeklyReview | null = null;
+    if (reviewId) {
+      review = get().reviews.find((r) => r.id === reviewId) || null;
+    }
+    if (!review) {
+      const clientReviews = get().getClientReviews(clientId);
+      review = clientReviews[0] || null;
+    }
+
+    const stageSummary = get().generateStageSummary(clientId);
+
+    const today = new Date().toISOString().split("T")[0];
+    const weekNumber = review?.weekNumber || client.currentWeek;
+
+    let fullText = "";
+    fullText += "═══════════════════════════════════════════\n";
+    fullText += `     ${client.name} · 来访者交付包\n`;
+    fullText += `     第 ${weekNumber} 周 · 生成日期：${today}\n`;
+    fullText += "═══════════════════════════════════════════\n\n";
+
+    fullText += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+    fullText += "一、本周核心任务单\n";
+    fullText += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+    const tasks = review?.tasks || get().getCurrentWeekPlan(clientId)?.tasks || [];
+    tasks.forEach((t, i) => {
+      fullText += `  ${i + 1}. ${t}\n`;
+    });
+    fullText += "\n";
+
+    fullText += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+    fullText += "二、睡眠窗口建议\n";
+    fullText += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+    const nextBed = review?.nextWindowBed || client.sleepWindowBed;
+    const nextWake = review?.nextWindowWake || client.sleepWindowWake;
+    fullText += `  建议睡眠窗口：${nextBed} — ${nextWake}\n`;
+    if (review?.sleepWindowAdjust) {
+      fullText += `  调整说明：${review.sleepWindowAdjust}\n`;
+    }
+    if (review?.reasoning) {
+      fullText += `  制定依据：${review.reasoning}\n`;
+    }
+    fullText += "\n";
+
+    fullText += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+    fullText += "三、阶段总结\n";
+    fullText += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+    fullText += stageSummary.fullText || stageSummary.content;
+    fullText += "\n";
+
+    fullText += "═══════════════════════════════════════════\n";
+    fullText += "  本交付包由睡眠教练工作台自动生成\n";
+    fullText += "═══════════════════════════════════════════\n";
+
+    const pkg: DeliveryPackage = {
+      id: genId("dp"),
+      clientId,
+      generatedAt: today,
+      weekNumber,
+      title: `${client.name} · 第${weekNumber}周交付包`,
+      taskList: tasks,
+      stageSummary: stageSummary.fullText || stageSummary.content,
+      sleepWindowSuggestion: review?.sleepWindowAdjust || `睡眠窗口：${nextBed} - ${nextWake}`,
+      nextWindowBed: nextBed,
+      nextWindowWake: nextWake,
+      fullText,
+    };
+
+    get().saveDeliveryPackage(pkg);
+    return pkg;
   },
 
   createClient: (data) => {
@@ -365,6 +508,8 @@ export const useSleepCoachStore = create<SleepCoachStore>((set, get) => ({
         history: clientHistories,
       },
     });
+
+    get().generateWeekMaterialRecords(clientId);
   },
 
   getCurrentWeekPlan: (clientId) => {
@@ -379,6 +524,59 @@ export const useSleepCoachStore = create<SleepCoachStore>((set, get) => ({
     }
     const flow = getFlowByProgram(client.programType, client.intensity);
     return flow?.weeks[client.currentWeek - 1] || null;
+  },
+
+  addMaterialSendRecord: (data) => {
+    const newRecord: MaterialSendRecord = {
+      ...data,
+      id: genId("ms"),
+    };
+    const newList = [...get().materialSendRecords, newRecord];
+    set({ materialSendRecords: newList });
+    saveToStorage("sct_material_sends", newList);
+    return newRecord;
+  },
+
+  updateMaterialSendStatus: (recordId, status) => {
+    const today = new Date().toISOString().split("T")[0];
+    const newList = get().materialSendRecords.map((r) => {
+      if (r.id !== recordId) return r;
+      const updated: MaterialSendRecord = { ...r, status };
+      if (status === "sent") updated.sentAt = today;
+      if (status === "applied") {
+        updated.sentAt = r.sentAt || today;
+        updated.appliedAt = today;
+      }
+      return updated;
+    });
+    set({ materialSendRecords: newList });
+    saveToStorage("sct_material_sends", newList);
+  },
+
+  generateWeekMaterialRecords: (clientId) => {
+    const client = get().clients.find((c) => c.id === clientId);
+    if (!client) return;
+    const weekPlan = get().getCurrentWeekPlan(clientId);
+    if (!weekPlan?.materials?.length) return;
+
+    const existing = get().getClientMaterialSendRecords(clientId);
+    const existingForWeek = existing.filter(
+      (r) => r.weekNumber === weekPlan.weekNumber
+    );
+
+    weekPlan.materials.forEach((materialName) => {
+      const alreadyExists = existingForWeek.some(
+        (r) => r.materialName === materialName
+      );
+      if (!alreadyExists) {
+        get().addMaterialSendRecord({
+          clientId,
+          materialName,
+          weekNumber: weekPlan.weekNumber,
+          status: "pending",
+        });
+      }
+    });
   },
 
   saveBoundarySettings: (settings) => {

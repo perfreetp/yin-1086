@@ -169,3 +169,31 @@ export interface SidebarState {
   open: boolean;
   clientId: string | null;
 }
+
+export interface DeliveryPackage {
+  id: string;
+  clientId: string;
+  generatedAt: string;
+  weekNumber: number;
+  title: string;
+  taskList: string[];
+  stageSummary: string;
+  sleepWindowSuggestion: string;
+  nextWindowBed?: string;
+  nextWindowWake?: string;
+  fullText: string;
+}
+
+export type MaterialSendStatus = "pending" | "sent" | "applied";
+
+export interface MaterialSendRecord {
+  id: string;
+  clientId: string;
+  materialName: string;
+  materialId?: string;
+  weekNumber: number;
+  status: MaterialSendStatus;
+  sentAt?: string;
+  appliedAt?: string;
+  note?: string;
+}

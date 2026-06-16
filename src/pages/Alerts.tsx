@@ -12,11 +12,15 @@ import {
   ChevronRight,
   Save,
   CheckCircle,
+  CalendarClock,
+  CalendarX,
+  User,
+  CalendarDays,
 } from "lucide-react";
 import { useSleepCoachStore } from "../store";
 import PageHeader from "../components/PageHeader";
 import { AlertLevelBadge, StatusBadge } from "../components/Badges";
-import type { Alert, Client, BoundarySettings } from "../types";
+import type { Alert, Client, BoundarySettings, Appointment } from "../types";
 import { cn } from "../lib/utils";
 
 const alertTypeConfig: Record<string, { icon: typeof Bell; color: string; label: string }> = {
@@ -31,11 +35,17 @@ export default function AlertsPage() {
   const resolveAlert = useSleepCoachStore((s) => s.resolveAlert);
   const boundarySettings = useSleepCoachStore((s) => s.boundarySettings);
   const saveBoundarySettings = useSleepCoachStore((s) => s.saveBoundarySettings);
+  const getUpcomingFollowUps = useSleepCoachStore((s) => s.getUpcomingFollowUps);
+  const getOverdueFollowUps = useSleepCoachStore((s) => s.getOverdueFollowUps);
+  const toggleAppointmentCompleted = useSleepCoachStore((s) => s.toggleAppointmentCompleted);
+  const openSidebar = useSleepCoachStore((s) => s.openSidebar);
+  const getClientAppointments = useSleepCoachStore((s) => s.getClientAppointments);
 
   const [filter, setFilter] = useState<"全部" | "未处理" | "已处理">("未处理");
   const [showSettings, setShowSettings] = useState(false);
   const [form, setForm] = useState<BoundarySettings>(boundarySettings);
   const [saved, setSaved] = useState(false);
+  const [activeTab, setActiveTab] = useState<"alerts" | "followup">("alerts");
 
   const filteredAlerts = useMemo(() => {
     let list = [...alerts].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -54,6 +64,24 @@ export default function AlertsPage() {
       low: alerts.filter((a) => !a.resolved && a.level === "low").length,
     };
   }, [alerts]);
+
+  const upcomingFollowUps = useMemo(() => getUpcomingFollowUps(7), [getUpcomingFollowUps]);
+  const overdueFollowUps = useMemo(() => getOverdueFollowUps(), [getOverdueFollowUps]);
+
+  const followUpStats = useMemo(() => {
+    return {
+      upcoming: upcomingFollowUps.length,
+      overdue: overdueFollowUps.length,
+    };
+  }, [upcomingFollowUps, overdueFollowUps]);
+
+  const getDaysDiff = (dateStr: string) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const target = new Date(dateStr);
+    target.setHours(0, 0, 0, 0);
+    return Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  };
 
   const handleSave = () => {
     saveBoundarySettings(form);
@@ -247,52 +275,141 @@ export default function AlertsPage() {
       )}
 
       <div className="grid grid-cols-4 gap-4 mb-6">
-        <div className="card p-5">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-primary-50 flex items-center justify-center">
-              <Bell className="w-5 h-5 text-primary-600" />
+        {activeTab === "alerts" ? (
+          <>
+            <div className="card p-5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-primary-50 flex items-center justify-center">
+                  <Bell className="w-5 h-5 text-primary-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-slate-500">待处理预警</p>
+                  <p className="font-serif text-2xl font-semibold text-primary-800">{stats.total}</p>
+                </div>
+              </div>
             </div>
-            <div>
-              <p className="text-sm text-slate-500">待处理预警</p>
-              <p className="font-serif text-2xl font-semibold text-primary-800">{stats.total}</p>
+            <div className="card p-5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-warning-500/10 flex items-center justify-center">
+                  <AlertTriangle className="w-5 h-5 text-warning-500" />
+                </div>
+                <div>
+                  <p className="text-sm text-slate-500">紧急</p>
+                  <p className="font-serif text-2xl font-semibold text-warning-600">{stats.high}</p>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-        <div className="card p-5">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-warning-500/10 flex items-center justify-center">
-              <AlertTriangle className="w-5 h-5 text-warning-500" />
+            <div className="card p-5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center">
+                  <AlertTriangle className="w-5 h-5 text-amber-500" />
+                </div>
+                <div>
+                  <p className="text-sm text-slate-500">需注意</p>
+                  <p className="font-serif text-2xl font-semibold text-amber-600">{stats.medium}</p>
+                </div>
+              </div>
             </div>
-            <div>
-              <p className="text-sm text-slate-500">紧急</p>
-              <p className="font-serif text-2xl font-semibold text-warning-600">{stats.high}</p>
+            <div className="card p-5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
+                  <AlertTriangle className="w-5 h-5 text-slate-500" />
+                </div>
+                <div>
+                  <p className="text-sm text-slate-500">一般</p>
+                  <p className="font-serif text-2xl font-semibold text-slate-600">{stats.low}</p>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-        <div className="card p-5">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center">
-              <AlertTriangle className="w-5 h-5 text-amber-500" />
+          </>
+        ) : (
+          <>
+            <div className="card p-5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-primary-50 flex items-center justify-center">
+                  <CalendarDays className="w-5 h-5 text-primary-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-slate-500">复盘预约总计</p>
+                  <p className="font-serif text-2xl font-semibold text-primary-800">
+                    {followUpStats.upcoming + followUpStats.overdue}
+                  </p>
+                </div>
+              </div>
             </div>
-            <div>
-              <p className="text-sm text-slate-500">需注意</p>
-              <p className="font-serif text-2xl font-semibold text-amber-600">{stats.medium}</p>
+            <div className="card p-5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-mint-50 flex items-center justify-center">
+                  <CalendarClock className="w-5 h-5 text-mint-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-slate-500">近7天</p>
+                  <p className="font-serif text-2xl font-semibold text-mint-700">{followUpStats.upcoming}</p>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-        <div className="card p-5">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
-              <AlertTriangle className="w-5 h-5 text-slate-500" />
+            <div className="card p-5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-warning-500/10 flex items-center justify-center">
+                  <CalendarX className="w-5 h-5 text-warning-500" />
+                </div>
+                <div>
+                  <p className="text-sm text-slate-500">已逾期</p>
+                  <p className="font-serif text-2xl font-semibold text-warning-600">{followUpStats.overdue}</p>
+                </div>
+              </div>
             </div>
-            <div>
-              <p className="text-sm text-slate-500">一般</p>
-              <p className="font-serif text-2xl font-semibold text-slate-600">{stats.low}</p>
+            <div className="card p-5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
+                  <User className="w-5 h-5 text-slate-500" />
+                </div>
+                <div>
+                  <p className="text-sm text-slate-500">涉及来访者</p>
+                  <p className="font-serif text-2xl font-semibold text-slate-600">
+                    {new Set([...upcomingFollowUps, ...overdueFollowUps].map((a) => a.clientId)).size}
+                  </p>
+                </div>
+              </div>
             </div>
-          </div>
+          </>
+        )}
+      </div>
+
+      <div className="card overflow-hidden mb-6">
+        <div className="flex items-center gap-2 p-2 border-b border-slate-100">
+          {([
+            { key: "alerts", label: "预警提醒", icon: Bell, count: stats.total },
+            { key: "followup", label: "随访复盘台账", icon: CalendarDays, count: followUpStats.upcoming + followUpStats.overdue },
+          ] as const).map((tab) => (
+            <button
+              key={tab.key}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                activeTab === tab.key
+                  ? "bg-primary-700 text-white"
+                  : "text-slate-600 hover:bg-slate-100"
+              )}
+              onClick={() => setActiveTab(tab.key)}
+            >
+              <tab.icon className="w-4 h-4" />
+              {tab.label}
+              {tab.count > 0 && (
+                <span
+                  className={cn(
+                    "text-xs px-1.5 py-0.5 rounded-full",
+                    activeTab === tab.key ? "bg-white/20 text-white" : "bg-slate-200 text-slate-600"
+                  )}
+                >
+                  {tab.count}
+                </span>
+              )}
+            </button>
+          ))}
         </div>
       </div>
 
+      {activeTab === "alerts" && (
       <div className="card overflow-hidden">
         <div className="flex items-center gap-2 p-4 border-b border-slate-100">
           {(["未处理", "全部", "已处理"] as const).map((f) => (
@@ -333,6 +450,175 @@ export default function AlertsPage() {
           )}
         </div>
       </div>
+      )}
+
+      {activeTab === "followup" && (
+        <div className="space-y-6">
+          {overdueFollowUps.length > 0 && (
+            <div className="card overflow-hidden">
+              <div className="p-4 border-b border-slate-100 bg-warning-500/5">
+                <div className="flex items-center gap-2">
+                  <CalendarX className="w-5 h-5 text-warning-600" />
+                  <h3 className="font-serif text-base font-semibold text-warning-700">
+                    已逾期复盘（{overdueFollowUps.length}）
+                  </h3>
+                </div>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {overdueFollowUps.map((appt) => {
+                  const client = getClient(appt.clientId);
+                  if (!client) return null;
+                  const lastCompleted = getClientAppointments(appt.clientId)
+                    .filter((a) => a.completed)
+                    .sort((a, b) => b.date.localeCompare(a.date))[0];
+                  return (
+                    <FollowUpRow
+                      key={appt.id}
+                      appointment={appt}
+                      client={client}
+                      daysDiff={getDaysDiff(appt.date)}
+                      lastCompleted={lastCompleted}
+                      onComplete={() => toggleAppointmentCompleted(appt.id)}
+                      onOpenSidebar={() => openSidebar(client.id)}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="card overflow-hidden">
+            <div className="p-4 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <CalendarClock className="w-5 h-5 text-mint-600" />
+                <h3 className="font-serif text-base font-semibold text-slate-800">
+                  近7天待复盘（{upcomingFollowUps.length}）
+                </h3>
+              </div>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {upcomingFollowUps.length > 0 ? (
+                upcomingFollowUps.map((appt) => {
+                  const client = getClient(appt.clientId);
+                  if (!client) return null;
+                  const lastCompleted = getClientAppointments(appt.clientId)
+                    .filter((a) => a.completed)
+                    .sort((a, b) => b.date.localeCompare(a.date))[0];
+                  return (
+                    <FollowUpRow
+                      key={appt.id}
+                      appointment={appt}
+                      client={client}
+                      daysDiff={getDaysDiff(appt.date)}
+                      lastCompleted={lastCompleted}
+                      onComplete={() => toggleAppointmentCompleted(appt.id)}
+                      onOpenSidebar={() => openSidebar(client.id)}
+                    />
+                  );
+                })
+              ) : (
+                <div className="text-center py-16 text-slate-400">
+                  <CalendarDays className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p className="text-sm">近7天暂无待复盘预约</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FollowUpRow({
+  appointment,
+  client,
+  daysDiff,
+  lastCompleted,
+  onComplete,
+  onOpenSidebar,
+}: {
+  appointment: Appointment;
+  client: Client;
+  daysDiff: number;
+  lastCompleted?: Appointment;
+  onComplete: () => void;
+  onOpenSidebar: () => void;
+}) {
+  const isOverdue = daysDiff < 0;
+  const isToday = daysDiff === 0;
+  const isTomorrow = daysDiff === 1;
+
+  return (
+    <div className="flex items-center gap-4 p-5 hover:bg-slate-50 transition-colors">
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onOpenSidebar();
+        }}
+        className={cn(
+          "w-12 h-12 rounded-xl flex items-center justify-center text-white text-base font-medium flex-shrink-0 hover:ring-2 hover:ring-primary-300 transition-all",
+          client.gender === "女" ? "bg-rose-400" : "bg-primary-500"
+        )}
+      >
+        {client.name.slice(0, 1)}
+      </button>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-1">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenSidebar();
+            }}
+            className="font-serif text-base font-semibold text-slate-800 hover:text-primary-600 hover:underline transition-colors"
+          >
+            {client.name}
+          </button>
+          <StatusBadge status={client.status} />
+          <span className="text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+            W{client.currentWeek}/{client.programType}
+          </span>
+          {appointment.source === "review" && (
+            <span className="text-[10px] text-primary-600 bg-primary-50 px-2 py-0.5 rounded-full">
+              来自周回顾
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-3 text-sm">
+          <span className={cn(
+            "flex items-center gap-1 font-medium",
+            isOverdue && "text-warning-600",
+            isToday && "text-mint-600",
+            !isOverdue && !isToday && "text-slate-600"
+          )}>
+            <CalendarClock className="w-4 h-4" />
+            {isOverdue && `逾期 ${Math.abs(daysDiff)} 天`}
+            {isToday && "今天"}
+            {isTomorrow && "明天"}
+            {daysDiff > 1 && `${daysDiff} 天后`}
+            {" · "}{appointment.date} {appointment.time}
+          </span>
+          <span className="text-slate-400">|</span>
+          <span className="text-slate-600">{appointment.type || "周复盘"}</span>
+        </div>
+        {lastCompleted && (
+          <p className="text-xs text-slate-400 mt-1">
+            上次完成：{lastCompleted.date}
+          </p>
+        )}
+        {appointment.notes && (
+          <p className="text-xs text-slate-500 mt-1 line-clamp-1">
+            备注：{appointment.notes}
+          </p>
+        )}
+      </div>
+      <button
+        onClick={onComplete}
+        className="btn-primary flex items-center gap-1.5 text-sm"
+      >
+        <CheckCircle className="w-4 h-4" />
+        标记完成
+      </button>
     </div>
   );
 }
