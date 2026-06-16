@@ -252,6 +252,7 @@ export default function SchedulePage() {
                     clientStatus={
                       clients.find((c) => c.id === apt.clientId)?.status || "进行中"
                     }
+                    clientId={apt.clientId}
                     onToggle={() => toggleAppointmentCompleted(apt.id)}
                     onEdit={() => openEdit(apt)}
                   />
@@ -320,28 +321,41 @@ function ClientWeekRow({
   onSchedule: () => void;
 }) {
   const getCurrentWeekPlan = useSleepCoachStore((s) => s.getCurrentWeekPlan);
+  const openSidebar = useSleepCoachStore((s) => s.openSidebar);
   const plan = getCurrentWeekPlan(client.id);
 
   return (
     <div className="p-3 rounded-xl bg-slate-50 hover:bg-mint-50 transition-colors">
       <div className="flex items-center gap-3 mb-2">
-        <div
-          className={cn(
-            "w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-medium flex-shrink-0",
-            client.gender === "女" ? "bg-rose-400" : "bg-primary-500"
-          )}
-        >
-          {client.name.slice(0, 1)}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-slate-800">{client.name}</span>
-            <StatusBadge status={client.status} />
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              openSidebar(client.id);
+            }}
+            className={cn(
+              "w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-medium flex-shrink-0 hover:ring-2 hover:ring-primary-300 transition-all",
+              client.gender === "女" ? "bg-rose-400" : "bg-primary-500"
+            )}
+          >
+            {client.name.slice(0, 1)}
+          </button>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openSidebar(client.id);
+                }}
+                className="text-sm font-medium text-slate-800 hover:text-primary-600 hover:underline transition-colors"
+              >
+                {client.name}
+              </button>
+              <StatusBadge status={client.status} />
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5 truncate">
+              {plan ? plan.focus : client.tags.join(" · ") || "暂无标签"}
+            </p>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5 truncate">
-            {plan ? plan.focus : client.tags.join(" · ") || "暂无标签"}
-          </p>
-        </div>
         <button
           className="text-xs px-2 py-1 rounded-lg bg-primary-700 text-white hover:bg-primary-600 transition-colors"
           onClick={onSchedule}
@@ -362,15 +376,18 @@ function AppointmentCard({
   apt,
   clientName,
   clientStatus,
+  clientId,
   onToggle,
   onEdit,
 }: {
   apt: Appointment;
   clientName: string;
   clientStatus: Client["status"];
+  clientId: string;
   onToggle: () => void;
   onEdit: () => void;
 }) {
+  const openSidebar = useSleepCoachStore((s) => s.openSidebar);
   const isPast = apt.date < new Date().toISOString().split("T")[0];
   return (
     <div
@@ -397,14 +414,18 @@ function AppointmentCard({
         </button>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                openSidebar(clientId);
+              }}
               className={cn(
-                "text-sm font-medium",
+                "text-sm font-medium hover:text-primary-600 hover:underline transition-colors",
                 apt.completed ? "text-slate-500 line-through" : "text-slate-800"
               )}
             >
               {clientName}
-            </span>
+            </button>
             <StatusBadge status={clientStatus} />
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary-50 text-primary-700">
               {apt.type}

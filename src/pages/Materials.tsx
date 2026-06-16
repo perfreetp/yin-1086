@@ -45,6 +45,7 @@ export default function MaterialsPage() {
   const [selected, setSelected] = useState<MaterialTemplate | null>(null);
   const [copied, setCopied] = useState(false);
   const [applyClientId, setApplyClientId] = useState<string>("");
+  const [applyNote, setApplyNote] = useState<string>("");
   const [appliedSuccess, setAppliedSuccess] = useState<string | null>(null);
   const [appliedFlowView, setAppliedFlowView] = useState<ProgramFlow | null>(null);
   const [appliedClientView, setAppliedClientView] = useState<Client | null>(null);
@@ -87,11 +88,12 @@ export default function MaterialsPage() {
 
   const handleApply = () => {
     if (!matchedFlow || !applyClientId) return;
-    applyFlowToClient(applyClientId, matchedFlow.id);
+    applyFlowToClient(applyClientId, matchedFlow.id, applyNote);
     const client = clients.find((c) => c.id === applyClientId);
     setAppliedSuccess(client?.name || "该来访者");
     setAppliedFlowView(matchedFlow);
     setAppliedClientView(client || null);
+    setApplyNote("");
     setTimeout(() => setAppliedSuccess(null), 3000);
   };
 
@@ -217,30 +219,39 @@ export default function MaterialsPage() {
                 </div>
                 <div className="flex gap-2">
                   {isFlowTemplate(selected) && matchedFlow && (
-                    <div className="flex gap-2">
-                      <select
+                    <div className="flex-1 space-y-2">
+                      <div className="flex gap-2">
+                        <select
+                          className="input-field text-xs py-1.5 !h-auto flex-1"
+                          value={applyClientId}
+                          onChange={(e) => setApplyClientId(e.target.value)}
+                        >
+                          <option value="">选择来访者...</option>
+                          {activeClients.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name} (W{c.currentWeek}/{c.programType})
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          className={cn(
+                            "btn-secondary flex items-center gap-1.5 flex-shrink-0",
+                            !applyClientId && "opacity-50 cursor-not-allowed"
+                          )}
+                          onClick={handleApply}
+                          disabled={!applyClientId}
+                        >
+                          <UserPlus className="w-4 h-4" />
+                          套用
+                        </button>
+                      </div>
+                      <input
+                        type="text"
                         className="input-field text-xs py-1.5 !h-auto"
-                        value={applyClientId}
-                        onChange={(e) => setApplyClientId(e.target.value)}
-                      >
-                        <option value="">选择来访者...</option>
-                        {activeClients.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name} (W{c.currentWeek}/{c.programType})
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        className={cn(
-                          "btn-secondary flex items-center gap-1.5",
-                          !applyClientId && "opacity-50 cursor-not-allowed"
-                        )}
-                        onClick={handleApply}
-                        disabled={!applyClientId}
-                      >
-                        <UserPlus className="w-4 h-4" />
-                        套用
-                      </button>
+                        placeholder="套用备注（可选，如：调整强度、更换方案等）"
+                        value={applyNote}
+                        onChange={(e) => setApplyNote(e.target.value)}
+                      />
                     </div>
                   )}
                   <button

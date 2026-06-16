@@ -208,6 +208,7 @@ function ClientDiaryRow({
   lastDiaries: SleepDiary[];
 }) {
   const [expanded, setExpanded] = useState(false);
+  const openSidebar = useSleepCoachStore((s) => s.openSidebar);
   const chartData = lastDiaries.map((d) => ({
     day: d.date.slice(5),
     效率: d.submitted ? d.sleepEfficiency : null,
@@ -222,19 +223,29 @@ function ClientDiaryRow({
         )}
         onClick={() => setExpanded(!expanded)}
       >
-        <div
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            openSidebar(client.id);
+          }}
           className={cn(
-            "w-10 h-10 rounded-full flex items-center justify-center text-white font-medium flex-shrink-0",
+            "w-10 h-10 rounded-full flex items-center justify-center text-white font-medium flex-shrink-0 hover:ring-2 hover:ring-primary-300 transition-all",
             client.gender === "女" ? "bg-rose-400" : "bg-primary-500"
           )}
         >
           {client.name.slice(0, 1)}
-        </div>
+        </button>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-serif text-base font-semibold text-slate-800">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                openSidebar(client.id);
+              }}
+              className="font-serif text-base font-semibold text-slate-800 hover:text-primary-600 hover:underline transition-colors"
+            >
               {client.name}
-            </span>
+            </button>
             {hasAbnormal && (
               <span className="flex items-center gap-1 text-xs text-warning-600 bg-warning-500/10 px-2 py-0.5 rounded-full">
                 <AlertCircle className="w-3 h-3" />

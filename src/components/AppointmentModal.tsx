@@ -9,8 +9,11 @@ interface AppointmentModalProps {
   open: boolean;
   onClose: () => void;
   initialClientId?: string;
+  initialNotes?: string;
   editing?: Appointment | null;
   onSuccess?: () => void;
+  source?: Appointment["source"];
+  linkedReviewId?: string;
 }
 
 const APPT_TYPES: AppointmentType[] = ["初次评估", "周复盘", "阶段总结", "紧急跟进"];
@@ -19,8 +22,11 @@ export default function AppointmentModal({
   open,
   onClose,
   initialClientId,
+  initialNotes,
   editing,
   onSuccess,
+  source,
+  linkedReviewId,
 }: AppointmentModalProps) {
   const clients = useSleepCoachStore((s) => s.clients);
   const createAppointment = useSleepCoachStore((s) => s.createAppointment);
@@ -52,10 +58,10 @@ export default function AppointmentModal({
         date: new Date().toISOString().split("T")[0],
         time: "19:30",
         type: "周复盘",
-        notes: "",
+        notes: initialNotes || "",
       });
     }
-  }, [editing, initialClientId, open]);
+  }, [editing, initialClientId, open, initialNotes]);
 
   const update = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) => {
     setForm({ ...form, [key]: value });
@@ -78,6 +84,8 @@ export default function AppointmentModal({
         time: form.time,
         type: form.type,
         notes: form.notes || undefined,
+        source: source || "manual",
+        linkedReviewId,
       });
     }
     onClose();

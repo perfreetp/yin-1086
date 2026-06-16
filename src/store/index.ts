@@ -13,6 +13,8 @@ import {
   Intensity,
   ProgramType,
   WeekPlan,
+  FlowApplyHistory,
+  SidebarState,
 } from "../types";
 import {
   mockClients,
@@ -41,6 +43,8 @@ interface SleepCoachStore {
   flows: ProgramFlow[];
   boundarySettings: BoundarySettings;
   stageSummaries: StageSummary[];
+  flowApplyHistories: FlowApplyHistory[];
+  sidebar: SidebarState;
   selectedClientId: string | null;
 
   setSelectedClient: (id: string | null) => void;
@@ -49,11 +53,14 @@ interface SleepCoachStore {
   getClientObstacles: (clientId: string) => Obstacle[];
   getClientAppointments: (clientId: string) => Appointment[];
   getClientAlerts: (clientId: string) => Alert[];
+  getClientFlowHistory: (clientId: string) => FlowApplyHistory[];
+  getClientStageSummaries: (clientId: string) => StageSummary[];
   getUnresolvedAlertsCount: () => number;
   resolveAlert: (alertId: string) => void;
   addObstacle: (obstacle: Omit<Obstacle, "id">) => void;
-  addReview: (review: Omit<WeeklyReview, "id">) => void;
+  addReview: (review: Omit<WeeklyReview, "id">) => WeeklyReview;
   updateClient: (clientId: string, updates: Partial<Client>) => void;
+  saveStageSummary: (summary: StageSummary) => void;
 
   createClient: (data: {
     name: string;
@@ -75,6 +82,8 @@ interface SleepCoachStore {
     time: string;
     type: string;
     notes?: string;
+    source?: Appointment["source"];
+    linkedReviewId?: string;
   }) => Appointment;
   updateAppointment: (
     apptId: string,
@@ -83,13 +92,17 @@ interface SleepCoachStore {
   toggleAppointmentCompleted: (apptId: string) => void;
   deleteAppointment: (apptId: string) => void;
 
-  applyFlowToClient: (clientId: string, flowId: string) => void;
+  applyFlowToClient: (clientId: string, flowId: string, note?: string) => void;
   getCurrentWeekPlan: (clientId: string) => WeekPlan | null;
 
   saveBoundarySettings: (settings: BoundarySettings) => void;
 
   generateSmartReview: (clientId: string) => WeeklyReview | null;
   generateStageSummary: (clientId: string) => StageSummary;
+
+  openSidebar: (clientId: string) => void;
+  closeSidebar: () => void;
+  toggleSidebar: () => void;
 }
 
 const loadFromStorage = <T>(key: string, fallback: T): T => {
@@ -109,7 +122,8 @@ const saveToStorage = (key: string, value: unknown) => {
   }
 };
 
-const genId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+const genId = (prefix: string) =>
+  `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
 export const useSleepCoachStore = create<SleepCoachStore>((set, get) => ({
   clients: loadFromStorage("sct_clients", mockClients),
@@ -122,6 +136,8 @@ export const useSleepCoachStore = create<SleepCoachStore>((set, get) => ({
   flows: programFlows,
   boundarySettings: loadFromStorage("sct_boundaries", defaultBoundarySettings),
   stageSummaries: loadFromStorage("sct_summaries", [] as StageSummary[]),
+  flowApplyHistories: loadFromStorage("sct_flow_histories", [] as FlowApplyHistory[]),
+  sidebar: loadFromStorage("sct_sidebar", { open: false, clientId: null }),
   selectedClientId: null,
 
   setSelectedClient: (id) => set({ selectedClientId: id }),
@@ -141,7 +157,18 @@ export const useSleepCoachStore = create<SleepCoachStore>((set, get) => ({
   getClientAlerts: (clientId) =>
     get().alerts.filter((a) => a.clientId === clientId),
 
-  getUnresolvedAlertsCount: () => get().alerts.filter((a) => !a.resolved).length,
+  getClientFlowHistory: (clientId) =>
+    get().flowApplyHistories
+      .filter((h) => h.clientId === clientId)
+      .sort((a, b) => b.appliedAt.localeCompare(a.appliedAt)),
+
+  getClientStageSummaries: (clientId) =>
+    get().stageSummaries
+      .filter((s) => s.clientId === clientId)
+      .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt)),
+
+  getUnresolvedAlertsCount: () =>
+    get().alerts.filter((a) => !a.resolved).length,
 
   resolveAlert: (alertId) => {
     const newAlerts = get().alerts.map((a) =>
@@ -177,6 +204,7 @@ export const useSleepCoachStore = create<SleepCoachStore>((set, get) => ({
         lastContactDate: new Date().toISOString().split("T")[0],
       });
     }
+    return newReview;
   },
 
   updateClient: (clientId, updates) => {
@@ -185,6 +213,20 @@ export const useSleepCoachStore = create<SleepCoachStore>((set, get) => ({
     );
     set({ clients: newClients });
     saveToStorage("sct_clients", newClients);
+  },
+
+  saveStageSummary: (summary) => {
+    const existing = get().stageSummaries.find((s) => s.id === summary.id);
+    let newList;
+    if (existing) {
+      newList = get().stageSummaries.map((s) =>
+        s.id === summary.id ? summary : s
+      );
+    } else {
+      newList = [...get().stageSummaries, summary];
+    }
+    set({ stageSummaries: newList });
+    saveToStorage("sct_summaries", newList);
   },
 
   createClient: (data) => {
@@ -211,11 +253,28 @@ export const useSleepCoachStore = create<SleepCoachStore>((set, get) => ({
 
     const flow = getFlowByProgram(data.programType, data.intensity);
     if (flow) {
+      const history: FlowApplyHistory = {
+        id: genId("fh"),
+        clientId: newClient.id,
+        flowId: flow.id,
+        flowName: flow.name,
+        programType: flow.programType,
+        intensity: flow.intensity,
+        appliedAt: today,
+        note: "新建个案时自动套用",
+      };
+
       newClient.appliedFlow = {
         flowId: flow.id,
+        flowName: flow.name,
         appliedAt: today,
         currentWeekPlan: flow.weeks[0] || null,
+        history: [history],
       };
+
+      const newHistories = [...get().flowApplyHistories, history];
+      set({ flowApplyHistories: newHistories });
+      saveToStorage("sct_flow_histories", newHistories);
     }
 
     const newClients = [...get().clients, newClient];
@@ -234,6 +293,8 @@ export const useSleepCoachStore = create<SleepCoachStore>((set, get) => ({
       type: data.type,
       notes: data.notes,
       completed: false,
+      source: data.source || "manual",
+      linkedReviewId: data.linkedReviewId,
     };
     const newList = [...get().appointments, newAppt];
     set({ appointments: newList });
@@ -267,19 +328,41 @@ export const useSleepCoachStore = create<SleepCoachStore>((set, get) => ({
     saveToStorage("sct_appointments", newList);
   },
 
-  applyFlowToClient: (clientId, flowId) => {
+  applyFlowToClient: (clientId, flowId, note) => {
     const flow = get().flows.find((f) => f.id === flowId);
     const client = get().clients.find((c) => c.id === clientId);
     if (!flow || !client) return;
 
     const today = new Date().toISOString().split("T")[0];
+
+    const history: FlowApplyHistory = {
+      id: genId("fh"),
+      clientId,
+      flowId: flow.id,
+      flowName: flow.name,
+      programType: flow.programType,
+      intensity: flow.intensity,
+      appliedAt: today,
+      note,
+    };
+
+    const newHistories = [...get().flowApplyHistories, history];
+    set({ flowApplyHistories: newHistories });
+    saveToStorage("sct_flow_histories", newHistories);
+
+    const clientHistories = get()
+      .getClientFlowHistory(clientId)
+      .concat(history);
+
     get().updateClient(clientId, {
       programType: flow.programType,
       intensity: flow.intensity,
       appliedFlow: {
         flowId,
+        flowName: flow.name,
         appliedAt: today,
         currentWeekPlan: flow.weeks[client.currentWeek - 1] || null,
+        history: clientHistories,
       },
     });
   },
@@ -334,7 +417,9 @@ export const useSleepCoachStore = create<SleepCoachStore>((set, get) => ({
     let summary = "";
     if (avgEfficiency >= 85) {
       summary = `本周整体表现良好，平均睡眠效率${avgEfficiency}%，已达到或接近目标水平。继续保持当前作息节奏，${
-        suggestion.level === "expand" ? "可尝试逐步延长睡眠窗口。" : "巩固已建立的节律。"
+        suggestion.level === "expand"
+          ? "可尝试逐步延长睡眠窗口。"
+          : "巩固已建立的节律。"
       }注意关注周末作息不要有大的漂移。`;
     } else if (avgEfficiency >= 70) {
       summary = `本周睡眠效率${avgEfficiency}%，处于改善过程中。${
@@ -367,19 +452,25 @@ export const useSleepCoachStore = create<SleepCoachStore>((set, get) => ({
       createdAt: new Date().toISOString().split("T")[0],
       nextWindowBed: suggestion.suggestedBed,
       nextWindowWake: suggestion.suggestedWake,
+      reasoning: suggestion.reasoning.join("；"),
     };
   },
 
   generateStageSummary: (clientId) => {
     const client = get().clients.find((c) => c.id === clientId);
     if (!client) {
-      return {
+      const empty: StageSummary = {
         id: genId("s"),
         clientId,
         generatedAt: new Date().toISOString().split("T")[0],
         title: "阶段总结",
         content: "",
+        date: new Date().toISOString().split("T")[0],
+        period: "",
+        fullText: "",
       };
+      get().saveStageSummary(empty);
+      return empty;
     }
 
     const diaries = get().getClientDiaries(clientId);
@@ -450,7 +541,8 @@ export const useSleepCoachStore = create<SleepCoachStore>((set, get) => ({
     }
 
     content += `六、后续建议\n`;
-    const progress = (client.currentWeek / (client.programType === "6周" ? 6 : 8)) * 100;
+    const progress =
+      (client.currentWeek / (client.programType === "6周" ? 6 : 8)) * 100;
     if (progress < 50) {
       content += `  干预仍在前半段，核心任务是建立稳定的睡眠窗口和刺激控制行为，不要急于看到指标大幅变化。\n`;
     } else if (progress < 85) {
@@ -471,18 +563,42 @@ export const useSleepCoachStore = create<SleepCoachStore>((set, get) => ({
     content += `\n`;
     content += `—— 本报告生成于 ${new Date().toLocaleDateString("zh-CN")} ——\n`;
 
+    const period = `第1周 - 第${client.currentWeek}周`;
+    const date = new Date().toISOString().split("T")[0];
+
     const summary: StageSummary = {
       id: genId("s"),
       clientId,
-      generatedAt: new Date().toISOString().split("T")[0],
+      generatedAt: date,
       title: `${client.name} · 第${client.currentWeek}周阶段总结`,
       content,
+      date,
+      period,
+      fullText: content,
     };
 
-    const newList = [...get().stageSummaries, summary];
-    set({ stageSummaries: newList });
-    saveToStorage("sct_summaries", newList);
-
+    get().saveStageSummary(summary);
     return summary;
+  },
+
+  openSidebar: (clientId) => {
+    const state = { open: true, clientId };
+    set({ sidebar: state });
+    saveToStorage("sct_sidebar", state);
+  },
+
+  closeSidebar: () => {
+    const state = { open: false, clientId: null };
+    set({ sidebar: state });
+    saveToStorage("sct_sidebar", state);
+  },
+
+  toggleSidebar: () => {
+    const current = get().sidebar;
+    const state = current.open
+      ? { open: false, clientId: null }
+      : { open: true, clientId: current.clientId };
+    set({ sidebar: state });
+    saveToStorage("sct_sidebar", state);
   },
 }));

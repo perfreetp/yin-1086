@@ -21,10 +21,24 @@ export interface ProgramFlow {
   description: string;
 }
 
+export interface FlowApplyHistory {
+  id: string;
+  clientId: string;
+  flowId: string;
+  flowName: string;
+  programType: ProgramType;
+  intensity: Intensity;
+  appliedAt: string;
+  appliedBy?: string;
+  note?: string;
+}
+
 export interface AppliedFlow {
   flowId: string;
+  flowName: string;
   appliedAt: string;
   currentWeekPlan: WeekPlan | null;
+  history: FlowApplyHistory[];
 }
 
 export interface BoundarySettings {
@@ -117,6 +131,8 @@ export interface Appointment {
   type: AppointmentType | string;
   notes?: string;
   completed: boolean;
+  source?: "manual" | "review" | "schedule";
+  linkedReviewId?: string;
 }
 
 export interface Alert {
@@ -147,4 +163,9 @@ export interface StageSummary {
   date?: string;
   period?: string;
   fullText?: string;
+}
+
+export interface SidebarState {
+  open: boolean;
+  clientId: string | null;
 }

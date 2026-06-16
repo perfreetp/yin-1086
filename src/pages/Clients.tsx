@@ -13,11 +13,12 @@ function ClientCard({ client, onClick }: { client: Client; onClick: () => void }
   const alertCount = useSleepCoachStore((s) =>
     s.getClientAlerts(client.id).filter((a) => !a.resolved).length
   );
+  const openSidebar = useSleepCoachStore((s) => s.openSidebar);
 
   return (
     <div
       className="card card-hover p-5 cursor-pointer animate-slide-up"
-      onClick={onClick}
+      onClick={() => openSidebar(client.id)}
     >
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
